@@ -28,6 +28,15 @@ jobs:
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
 
       - name: Grant execute permission for gradlew
+
+      # Tambahkan step ini untuk membuat gradlew secara otomatis di runner
+      - name: Generate Gradle Wrapper
+        run: gradle wrapper
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+        
         run: chmod +x gradlew
 
       - name: Build and Sign Release APK

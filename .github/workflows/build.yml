@@ -21,10 +21,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Generate Gradle Wrapper
-        run: gradle wrapper
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Decode Keystore File
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore

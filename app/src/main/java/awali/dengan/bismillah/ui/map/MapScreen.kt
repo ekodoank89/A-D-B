@@ -11,11 +11,13 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -52,12 +54,15 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import awali.dengan.bismillah.R
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.rememberCameraPositionState
+import com.google.maps.android.compose.rememberMarkerState
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -80,14 +85,14 @@ fun MapScreen(modifier: Modifier = Modifier) {
     var grbPlaying by remember { mutableStateOf(false) }
     var gjkPlaying by remember { mutableStateOf(false) }
 
-    // ===== Koordinat TERKUNCI pada saat tombol di-PLAY =====
-    // null = belum pernah di-play
+    // ===== Koordinat TERKUNCI saat tombol di-PLAY =====
+    // null = stop / belum pernah play (marker hilang + chip kosong)
     var grbCoord by remember { mutableStateOf<LatLng?>(null) }
     var gjkCoord by remember { mutableStateOf<LatLng?>(null) }
 
     Box(modifier = modifier.fillMaxSize()) {
 
-        // ===== Google Map full width =====
+        // ===== Google Map full width + marker GRB/GJK =====
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = cameraPositionState,
@@ -95,12 +100,29 @@ fun MapScreen(modifier: Modifier = Modifier) {
             properties = remember(locationGranted) {
                 MapProperties(isMyLocationEnabled = locationGranted)
             }
-        )
+        ) {
+            // Marker GRB — muncul saat PLAY, hilang saat STOP
+            grbCoord?.let { coord ->
+                Marker(
+                    state = rememberMarkerState(key = "grb_$coord", position = coord),
+                    title = "GRB",
+                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
+                )
+            }
+            // Marker GJK — muncul saat PLAY, hilang saat STOP
+            gjkCoord?.let { coord ->
+                Marker(
+                    state = rememberMarkerState(key = "gjk_$coord", position = coord),
+                    title = "GJK",
+                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE)
+                )
+            }
+        }
 
         // ===== Pin tetap di tengah layar =====
         CenterPin(modifier = Modifier.align(Alignment.Center))
 
-        // ===== Panel chip koordinat: PIN + GRB + GJK (1 kontainer, atas-tengah, presisi) =====
+        // ===== Panel chip koordinat: PIN + GRB + GJK (atas-tengah, center, presisi) =====
         CoordinatePanel(
             pinCoord = target,
             grbCoord = grbCoord,
@@ -113,27 +135,29 @@ fun MapScreen(modifier: Modifier = Modifier) {
                 .padding(top = 4.dp) // padding kecil agar presisi
         )
 
-        // ===== Panel tombol GRB & GJK vertikal (moveable + lock) =====
+        // ===== Panel tombol vertikal (moveable + lock) =====
         PlayControlPanel(
             grbPlaying = grbPlaying,
             gjkPlaying = gjkPlaying,
             onGrbToggle = {
                 if (!grbPlaying) {
-                    // PLAY: kunci koordinat tengah layar SAAT INI
+                    // PLAY: kunci koordinat tengah layar saat ini -> chip + marker
                     grbCoord = cameraPositionState.position.target
                     grbPlaying = true
                 } else {
-                    // STOP: koordinat terkunci tetap tersimpan di chip
+                    // STOP: hapus marker + kosongkan chip
+                    grbCoord = null
                     grbPlaying = false
                 }
             },
             onGjkToggle = {
                 if (!gjkPlaying) {
-                    // PLAY: kunci koordinat tengah layar SAAT INI
+                    // PLAY: kunci koordinat tengah layar saat ini -> chip + marker
                     gjkCoord = cameraPositionState.position.target
                     gjkPlaying = true
                 } else {
-                    // STOP: koordinat terkunci tetap tersimpan di chip
+                    // STOP: hapus marker + kosongkan chip
+                    gjkCoord = null
                     gjkPlaying = false
                 }
             },
@@ -162,7 +186,7 @@ private fun CenterPin(modifier: Modifier = Modifier) {
 }
 
 // =====================================================================
-// Panel chip koordinat (PIN + GRB + GJK) — tap chip PIN = collapse jadi icon mata
+// Panel chip koordinat (PIN + GRB + GJK) — konten align center
 // =====================================================================
 
 @Composable
@@ -188,7 +212,8 @@ private fun CoordinatePanel(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp) // rapat & presisi
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), // rapat & presisi
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // Chip PIN — tap = collapse semua chip menjadi icon mata
                 ChipRow(
@@ -273,10 +298,12 @@ private fun ChipRow(
 ) {
     Row(
         modifier = Modifier
+            .fillMaxWidth() // agar konten bisa di-center menyamai baris terlebar
             .clip(RoundedCornerShape(50))
             .clickable(onClick = onClick)
-            .padding(horizontal = 7.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 8.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center // konten align center
     ) {
         leading()
         Spacer(Modifier.width(6.dp))
@@ -308,8 +335,8 @@ private fun StatusDot(playing: Boolean) {
 }
 
 // =====================================================================
-// Panel kontrol GRB & GJK — susunan VERTIKAL:
-//   [GRB label] -> [tombol GRB] -> [lock/unlock] -> [GJK label] -> [tombol GJK]
+// Panel kontrol — susunan vertikal:
+//   [tombol GRB] -> [label GRB] -> [lock/unlock] -> [label GJK] -> [tombol GJK]
 // Movable (drag) dengan tombol lock/unlock.
 // =====================================================================
 
@@ -350,21 +377,32 @@ private fun PlayControlPanel(
         )
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), // rapat & presisi
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 1. Tombol GRB (label di atas tombol)
-            PlayButton(
-                label = "GRB",
+            // 1. Tombol play/stop GRB
+            PlayCircleButton(
                 playing = grbPlaying,
                 activeColor = Color(0xFFE53935),
+                contentDesc = if (grbPlaying) "Stop GRB" else "Play GRB",
                 onClick = onGrbToggle
             )
 
-            // 2. Lock/unlock moveable (di antara GRB dan GJK)
+            Spacer(Modifier.height(5.dp))
+
+            // 2. Label GRB (di bawah tombol)
+            PlayLabel(
+                text = "GRB",
+                playing = grbPlaying,
+                activeColor = Color(0xFFE53935)
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // 3. Lock/unlock movable (di tengah)
             IconButton(
                 onClick = { locked = !locked },
-                modifier = Modifier.size(26.dp)
+                modifier = Modifier.size(28.dp)
             ) {
                 Icon(
                     painter = painterResource(
@@ -373,15 +411,26 @@ private fun PlayControlPanel(
                     contentDescription = if (locked) "Buka kunci" else "Kunci posisi",
                     tint = if (locked) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(15.dp)
+                    modifier = Modifier.size(16.dp)
                 )
             }
 
-            // 3. Tombol GJK (label di atas tombol)
-            PlayButton(
-                label = "GJK",
+            Spacer(Modifier.height(8.dp))
+
+            // 4. Label GJK (di atas tombol)
+            PlayLabel(
+                text = "GJK",
+                playing = gjkPlaying,
+                activeColor = Color(0xFF1E88E5)
+            )
+
+            Spacer(Modifier.height(5.dp))
+
+            // 5. Tombol play/stop GJK
+            PlayCircleButton(
                 playing = gjkPlaying,
                 activeColor = Color(0xFF1E88E5),
+                contentDesc = if (gjkPlaying) "Stop GJK" else "Play GJK",
                 onClick = onGjkToggle
             )
         }
@@ -389,43 +438,47 @@ private fun PlayControlPanel(
 }
 
 @Composable
-private fun PlayButton(
-    label: String,
+private fun PlayCircleButton(
     playing: Boolean,
     activeColor: Color,
+    contentDesc: String,
     onClick: () -> Unit
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        // Label di ATAS tombol
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            color = if (playing) activeColor else MaterialTheme.colorScheme.onSurface
-        )
-        Spacer(Modifier.height(3.dp))
-        Surface(
-            modifier = Modifier
-                .size(46.dp)
-                .clip(CircleShape)
-                .clickable(onClick = onClick),
-            shape = CircleShape,
-            color = if (playing) activeColor else MaterialTheme.colorScheme.primaryContainer,
-            shadowElevation = 2.dp
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    painter = painterResource(
-                        if (playing) R.drawable.ic_stop else R.drawable.ic_play
-                    ),
-                    contentDescription = if (playing) "Stop $label" else "Play $label",
-                    tint = if (playing) Color.White
-                    else MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
+    Surface(
+        modifier = Modifier
+            .size(46.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        shape = CircleShape,
+        color = if (playing) activeColor else MaterialTheme.colorScheme.primaryContainer,
+        shadowElevation = 2.dp
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                painter = painterResource(
+                    if (playing) R.drawable.ic_stop else R.drawable.ic_play
+                ),
+                contentDescription = contentDesc,
+                tint = if (playing) Color.White
+                else MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(22.dp)
+            )
         }
     }
+}
+
+@Composable
+private fun PlayLabel(
+    text: String,
+    playing: Boolean,
+    activeColor: Color
+) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.Bold,
+        color = if (playing) activeColor else MaterialTheme.colorScheme.onSurface
+    )
 }
 
 // =====================================================================

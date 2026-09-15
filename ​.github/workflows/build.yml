@@ -20,8 +20,15 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
+    # Setup wrapper jar otomatis jika tidak ada di repo
+    - name: Download Gradle Wrapper JAR
+      run: |
+        mkdir -p gradle/wrapper
+        curl -sJLo gradle/wrapper/gradle-wrapper.jar https://github.com/gradle/gradle/raw/v8.11.1/gradle/wrapper/gradle-wrapper.jar
+
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
+
 
     - name: Build with Gradle
       env:

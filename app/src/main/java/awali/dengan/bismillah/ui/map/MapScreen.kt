@@ -4,20 +4,16 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -38,6 +34,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,15 +42,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import awali.dengan.bismillah.R
+import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
@@ -63,6 +58,7 @@ import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.maps.android.compose.rememberMarkerState
+import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -73,6 +69,7 @@ private val PIN_SIZE = 40.dp
 @Composable
 fun MapScreen(modifier: Modifier = Modifier) {
     val locationGranted = rememberAppPermissions()
+    val scope = rememberCoroutineScope()
 
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(DEFAULT_CENTER, DEFAULT_ZOOM)
@@ -89,6 +86,18 @@ fun MapScreen(modifier: Modifier = Modifier) {
     // null = stop / belum pernah play (marker hilang + chip kosong)
     var grbCoord by remember { mutableStateOf<LatLng?>(null) }
     var gjkCoord by remember { mutableStateOf<LatLng?>(null) }
+
+    // Animasi kamera (pin tengah) menuju koordinat marker
+    fun flyTo(coord: LatLng) {
+        scope.launch {
+            cameraPositionState.animate(
+                CameraUpdateFactory.newLatLngZoom(
+                    coord,
+                    cameraPositionState.position.zoom // pertahankan zoom saat ini
+                )
+            )
+        }
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
 
@@ -122,17 +131,19 @@ fun MapScreen(modifier: Modifier = Modifier) {
         // ===== Pin tetap di tengah layar =====
         CenterPin(modifier = Modifier.align(Alignment.Center))
 
-        // ===== Panel chip koordinat: PIN + GRB + GJK (atas-tengah, center, presisi) =====
+        // ===== Panel chip koordinat: PIN + GRB + GJK (atas-tengah, center) =====
         CoordinatePanel(
             pinCoord = target,
             grbCoord = grbCoord,
             grbPlaying = grbPlaying,
             gjkCoord = gjkCoord,
             gjkPlaying = gjkPlaying,
+            onGrbChipClick = { grbCoord?.let { flyTo(it) } },
+            onGjkChipClick = { gjkCoord?.let { flyTo(it) } },
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .statusBarsPadding()
-                .padding(top = 4.dp) // padding kecil agar presisi
+                .padding(top = 4.dp)
         )
 
         // ===== Panel tombol vertikal (moveable + lock) =====
@@ -186,7 +197,10 @@ private fun CenterPin(modifier: Modifier = Modifier) {
 }
 
 // =====================================================================
-// Panel chip koordinat (PIN + GRB + GJK) — konten align center
+// Panel chip koordinat (PIN + GRB + GJK)
+//  - Chip wrap-content (tidak melebar rapat kanan-kiri), center di panel
+//  - Tap PIN  = collapse jadi icon mata
+//  - Tap GRB/GJK = pin/kamera animasi menuju markernya
 // =====================================================================
 
 @Composable
@@ -196,11 +210,11 @@ private fun CoordinatePanel(
     grbPlaying: Boolean,
     gjkCoord: LatLng?,
     gjkPlaying: Boolean,
+    onGrbChipClick: () -> Unit,
+    onGjkChipClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(true) }
-    val clipboard = LocalClipboardManager.current
-    val context = LocalContext.current
 
     if (expanded) {
         Surface(
@@ -212,8 +226,8 @@ private fun CoordinatePanel(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), // rapat & presisi
-                horizontalAlignment = Alignment.CenterHorizontally
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally // chip center, wrap-content
             ) {
                 // Chip PIN — tap = collapse semua chip menjadi icon mata
                 ChipRow(
@@ -235,16 +249,13 @@ private fun CoordinatePanel(
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                 )
 
-                // Chip GRB — koordinat terkunci saat PLAY, tap = salin
+                // Chip GRB — tap = pin menuju marker GRB
                 ChipRow(
                     leading = { StatusDot(grbPlaying) },
                     label = "GRB",
                     text = formatCoord(grbCoord),
-                    onClick = {
-                        val t = formatCoord(grbCoord)
-                        clipboard.setText(AnnotatedString(t))
-                        Toast.makeText(context, "GRB disalin: $t", Toast.LENGTH_SHORT).show()
-                    }
+                    enabled = grbCoord != null, // aktif hanya jika ada marker
+                    onClick = onGrbChipClick
                 )
 
                 HorizontalDivider(
@@ -252,16 +263,13 @@ private fun CoordinatePanel(
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                 )
 
-                // Chip GJK — koordinat terkunci saat PLAY, tap = salin
+                // Chip GJK — tap = pin menuju marker GJK
                 ChipRow(
                     leading = { StatusDot(gjkPlaying) },
                     label = "GJK",
                     text = formatCoord(gjkCoord),
-                    onClick = {
-                        val t = formatCoord(gjkCoord)
-                        clipboard.setText(AnnotatedString(t))
-                        Toast.makeText(context, "GJK disalin: $t", Toast.LENGTH_SHORT).show()
-                    }
+                    enabled = gjkCoord != null, // aktif hanya jika ada marker
+                    onClick = onGjkChipClick
                 )
             }
         }
@@ -294,16 +302,16 @@ private fun ChipRow(
     leading: @Composable () -> Unit,
     label: String,
     text: String,
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
     Row(
+        // wrap-content: tidak fillMaxWidth, tidak rapat kanan-kiri
         modifier = Modifier
-            .fillMaxWidth() // agar konten bisa di-center menyamai baris terlebar
             .clip(RoundedCornerShape(50))
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center // konten align center
+        verticalAlignment = Alignment.CenterVertically
     ) {
         leading()
         Spacer(Modifier.width(6.dp))
@@ -311,13 +319,16 @@ private fun ChipRow(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
+            color = if (enabled) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
         )
         Spacer(Modifier.width(6.dp))
         Text(
             text = text,
             style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold
+            fontWeight = FontWeight.SemiBold,
+            color = if (enabled) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
         )
     }
 }

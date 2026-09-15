@@ -79,6 +79,4 @@ dependencies {
     implementation("com.google.maps.android:maps-compose:6.1.2")
     implementation("com.google.android.gms:play-services-maps:19.0.0")
 
-    // LSPosed modern API (compile-only, tidak dibundel)
-    compileOnly("io.github.libxposed:api:100")
 }

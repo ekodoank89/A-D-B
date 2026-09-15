@@ -1,5 +1,7 @@
 <resources>
+    <!-- Scope LSPosed: HANYA aplikasi rekomendasi yang tampil di ceklis -->
     <string-array name="xposed_scope">
-        <item>android</item>
+        <item>com.gojek.partner</item>
+        <item>com.grabtaxi.driver2</item>
     </string-array>
 </resources>

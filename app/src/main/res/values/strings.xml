@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">A-D-B</string>
+    <string name="xposed_description">A-D-B — modul LSPosed modern (API 102)</string>
+</resources>

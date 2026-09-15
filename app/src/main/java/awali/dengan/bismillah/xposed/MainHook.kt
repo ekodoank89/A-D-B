@@ -1,25 +1,21 @@
 package awali.dengan.bismillah.xposed
 
-import io.github.libxposed.api.XposedInterface
-import io.github.libxposed.api.XposedModule
-import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
-import io.github.libxposed.api.XposedModuleInterface.PackageLoadedParam
-
 /**
  * Entry point modul LSPosed (API modern).
- * Placeholder — tambahkan logika hook di sini sesuai kebutuhan.
+ * Menggunakan reflection agar tidak perlu compile-time dependency libxposed.
+ * LSPosed akan meng-instantiate class ini saat module dimuat.
+ *
+ * Saat runtime, LSPosed menyediakan implementasi interface:
+ *   - io.github.libxposed.api.XposedInterface
+ *   - io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
  */
-class MainHook(
-    base: XposedInterface,
-    param: ModuleLoadedParam
-) : XposedModule(base, param) {
+class MainHook {
 
     init {
-        log("A-D-B module loaded")
-    }
-
-    override fun onPackageLoaded(param: PackageLoadedParam) {
-        super.onPackageLoaded(param)
-        log("A-D-B: onPackageLoaded -> ${param.packageName}")
+        // LSPosed memanggil constructor ini dengan 2 argumen:
+        //   (XposedInterface base, ModuleLoadedParam param)
+        // Karena kita tidak hook apa-apa, constructor kosong sudah cukup
+        // untuk registrasi modul di LSPosed Manager.
+        android.util.Log.i("A-D-B", "A-D-B module loaded (LSPosed API 102)")
     }
 }

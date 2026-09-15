@@ -15,8 +15,8 @@ import com.google.android.gms.maps.MapsInitializer
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        // Inisialisasi Google Maps SDK untuk mencegah Force Close / Crash awal
+
+        // Inisialisasi awal Google Maps
         try {
             MapsInitializer.initialize(applicationContext, MapsInitializer.Renderer.LATEST) { renderer ->
                 Log.d("MapsInit", "Maps initialized with renderer: $renderer")

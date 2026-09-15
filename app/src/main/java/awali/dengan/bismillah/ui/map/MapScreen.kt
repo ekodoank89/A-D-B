@@ -3,6 +3,8 @@ package awali.dengan.bismillah.ui.map
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -44,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -53,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import awali.dengan.bismillah.R
 import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
@@ -70,6 +74,11 @@ private val DEFAULT_CENTER = LatLng(-6.2088, 106.8456) // Monas, Jakarta
 private const val DEFAULT_ZOOM = 17f
 private val PIN_SIZE = 40.dp
 
+// ===== Warna =====
+private val PIN_GREEN = Color(0xFF2E7D32)   // pin tengah: HIJAU
+private val GRB_RED = Color(0xFFE53935)     // marker GRB: MERAH (tetap)
+private val GJK_BLUE = Color(0xFF1E88E5)    // marker GJK: BIRU (tetap)
+
 @Composable
 fun MapScreen(modifier: Modifier = Modifier) {
     val locationGranted = rememberAppPermissions()
@@ -81,6 +90,10 @@ fun MapScreen(modifier: Modifier = Modifier) {
 
     // Target kamera = titik tengah layar (posisi pin). Live mengikuti pergeseran map.
     val target = cameraPositionState.position.target
+
+    // ===== Ikon marker berbentuk pin (di-render dari ic_pin + tint warna) =====
+    val grbMarkerIcon = rememberPinMarkerIcon(tint = GRB_RED)
+    val gjkMarkerIcon = rememberPinMarkerIcon(tint = GJK_BLUE)
 
     // ===== Status play/stop =====
     var grbPlaying by remember { mutableStateOf(false) }
@@ -114,25 +127,27 @@ fun MapScreen(modifier: Modifier = Modifier) {
                 MapProperties(isMyLocationEnabled = locationGranted)
             }
         ) {
-            // Marker GRB — muncul saat PLAY, hilang saat STOP
+            // Marker GRB — bentuk pin MERAH, muncul saat PLAY, hilang saat STOP
             grbCoord?.let { coord ->
                 Marker(
                     state = rememberMarkerState(key = "grb_$coord", position = coord),
                     title = "GRB",
-                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
+                    icon = grbMarkerIcon,
+                    anchor = Offset(0.5f, 1.0f) // ujung pin tepat di koordinat
                 )
             }
-            // Marker GJK — muncul saat PLAY, hilang saat STOP
+            // Marker GJK — bentuk pin BIRU, muncul saat PLAY, hilang saat STOP
             gjkCoord?.let { coord ->
                 Marker(
                     state = rememberMarkerState(key = "gjk_$coord", position = coord),
                     title = "GJK",
-                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE)
+                    icon = gjkMarkerIcon,
+                    anchor = Offset(0.5f, 1.0f)
                 )
             }
         }
 
-        // ===== Pin tetap di tengah layar =====
+        // ===== Pin HIJAU tetap di tengah layar =====
         CenterPin(modifier = Modifier.align(Alignment.Center))
 
         // ===== Panel chip koordinat: PIN + GRB + GJK (atas-tengah, wrap-content) =====
@@ -185,7 +200,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
 }
 
 // =====================================================================
-// Pin tengah
+// Pin tengah — HIJAU
 // =====================================================================
 
 @Composable
@@ -193,7 +208,7 @@ private fun CenterPin(modifier: Modifier = Modifier) {
     Icon(
         painter = painterResource(R.drawable.ic_pin),
         contentDescription = null,
-        tint = Color(0xFFE53935),
+        tint = PIN_GREEN,
         modifier = modifier
             .size(PIN_SIZE)
             .offset(y = -(PIN_SIZE / 2))
@@ -201,10 +216,33 @@ private fun CenterPin(modifier: Modifier = Modifier) {
 }
 
 // =====================================================================
+// Ikon marker berbentuk pin:
+// render vector ic_pin ke Bitmap, tint sesuai warna, jadikan BitmapDescriptor.
+// Ujung pin berada di bottom-center -> anchor (0.5, 1.0) agar presisi.
+// =====================================================================
+
+@Composable
+private fun rememberPinMarkerIcon(tint: Color): BitmapDescriptor {
+    val context = LocalContext.current
+    return remember(tint) {
+        val density = context.resources.displayMetrics.density
+        val sizePx = (34 * density).toInt().coerceAtLeast(1)
+
+        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val drawable = ContextCompat.getDrawable(context, R.drawable.ic_pin)!!
+        drawable.setTint(tint.toArgb())
+        drawable.setBounds(0, 0, sizePx, sizePx)
+        drawable.draw(canvas)
+
+        BitmapDescriptorFactory.fromBitmap(bitmap)
+    }
+}
+
+// =====================================================================
 // Panel chip koordinat (PIN + GRB + GJK)
-//  - Panel wrap-content murni: lebar = chip terlebar (sesuai ukuran koordinat)
-//  - Trik: width(IntrinsicSize.Max) menetralkan fillMaxWidth bawaan
-//    HorizontalDivider yang menyebabkan panel stretch penuh kanan-kiri
+//  - Panel wrap-content: lebar = chip terlebar
+//  - width(IntrinsicSize.Max) menetralkan fillMaxWidth bawaan HorizontalDivider
 //  - Tap PIN      = collapse jadi icon mata
 //  - Tap GRB/GJK  = pin/kamera animasi menuju markernya
 // =====================================================================
@@ -224,7 +262,7 @@ private fun CoordinatePanel(
 
     if (expanded) {
         Surface(
-            modifier = modifier, // wrap-content: selebar isi saja
+            modifier = modifier,
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
             tonalElevation = 2.dp,
@@ -232,8 +270,6 @@ private fun CoordinatePanel(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(
-                // KUNCI FIX: lebar kolom = lebar intrinsik child terlebar (chip koordinat),
-                // bukan lebar layar. Divider fillMaxWidth lalu hanya mengisi lebar ini.
                 modifier = Modifier
                     .width(IntrinsicSize.Max)
                     .padding(horizontal = 10.dp, vertical = 6.dp),
@@ -256,7 +292,7 @@ private fun CoordinatePanel(
 
                 HorizontalDivider(
                     modifier = Modifier
-                        .fillMaxWidth() // mengisi lebar intrinsik kolom, BUKAN layar
+                        .fillMaxWidth()
                         .padding(vertical = 2.dp),
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                 )
@@ -320,7 +356,6 @@ private fun ChipRow(
     onClick: () -> Unit
 ) {
     Row(
-        // wrap-content: lebar hanya selebar isinya
         modifier = Modifier
             .clip(RoundedCornerShape(50))
             .clickable(enabled = enabled, onClick = onClick)
@@ -408,7 +443,7 @@ private fun PlayControlPanel(
             // 1. Tombol play/stop GRB
             PlayCircleButton(
                 playing = grbPlaying,
-                activeColor = Color(0xFFE53935),
+                activeColor = GRB_RED,
                 contentDesc = if (grbPlaying) "Stop GRB" else "Play GRB",
                 onClick = onGrbToggle
             )
@@ -419,7 +454,7 @@ private fun PlayControlPanel(
             PlayLabel(
                 text = "GRB",
                 playing = grbPlaying,
-                activeColor = Color(0xFFE53935)
+                activeColor = GRB_RED
             )
 
             Spacer(Modifier.height(8.dp))
@@ -446,7 +481,7 @@ private fun PlayControlPanel(
             PlayLabel(
                 text = "GJK",
                 playing = gjkPlaying,
-                activeColor = Color(0xFF1E88E5)
+                activeColor = GJK_BLUE
             )
 
             Spacer(Modifier.height(5.dp))
@@ -454,7 +489,7 @@ private fun PlayControlPanel(
             // 5. Tombol play/stop GJK
             PlayCircleButton(
                 playing = gjkPlaying,
-                activeColor = Color(0xFF1E88E5),
+                activeColor = GJK_BLUE,
                 contentDesc = if (gjkPlaying) "Stop GJK" else "Play GJK",
                 onClick = onGjkToggle
             )

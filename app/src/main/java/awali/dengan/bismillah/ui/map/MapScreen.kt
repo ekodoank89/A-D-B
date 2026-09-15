@@ -5,11 +5,12 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.location.LocationManager
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
@@ -34,6 +35,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -61,6 +66,7 @@ import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapUiSettings
@@ -80,10 +86,47 @@ private val PIN_GREEN = Color(0xFF2E7D32) // pin tengah: HIJAU
 private val GRB_RED = Color(0xFFE53935)   // marker GRB: MERAH
 private val GJK_BLUE = Color(0xFF1E88E5)  // marker GJK: BIRU
 
+// ===== Style gelap untuk Google Map =====
+private val DARK_MAP_STYLE = """
+    [
+      {"elementType":"geometry","stylers":[{"color":"#242f3e"}]},
+      {"elementType":"labels.text.fill","stylers":[{"color":"#746855"}]},
+      {"elementType":"labels.text.stroke","stylers":[{"color":"#242f3e"}]},
+      {"featureType":"administrative.locality","elementType":"labels.text.fill","stylers":[{"color":"#d59563"}]},
+      {"featureType":"poi","elementType":"labels.text.fill","stylers":[{"color":"#d59563"}]},
+      {"featureType":"poi.park","elementType":"geometry","stylers":[{"color":"#263c3f"}]},
+      {"featureType":"poi.park","elementType":"labels.text.fill","stylers":[{"color":"#6b9a76"}]},
+      {"featureType":"road","elementType":"geometry","stylers":[{"color":"#38414e"}]},
+      {"featureType":"road","elementType":"geometry.stroke","stylers":[{"color":"#212a37"}]},
+      {"featureType":"road","elementType":"labels.text.fill","stylers":[{"color":"#9ca5b3"}]},
+      {"featureType":"road.highway","elementType":"geometry","stylers":[{"color":"#746855"}]},
+      {"featureType":"road.highway","elementType":"geometry.stroke","stylers":[{"color":"#1f2835"}]},
+      {"featureType":"road.highway","elementType":"labels.text.fill","stylers":[{"color":"#f3d19c"}]},
+      {"featureType":"transit","elementType":"geometry","stylers":[{"color":"#2f3948"}]},
+      {"featureType":"transit.station","elementType":"labels.text.fill","stylers":[{"color":"#d59563"}]},
+      {"featureType":"water","elementType":"geometry","stylers":[{"color":"#17263c"}]},
+      {"featureType":"water","elementType":"labels.text.fill","stylers":[{"color":"#515c6d"}]},
+      {"featureType":"water","elementType":"labels.text.stroke","stylers":[{"color":"#17263c"}]}
+    ]
+""".trimIndent()
+
 @Composable
 fun MapScreen(modifier: Modifier = Modifier) {
     val locationGranted = rememberAppPermissions()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    // ===== Mode gelap (map style + tema panel UI) =====
+    var darkMode by remember { mutableStateOf(false) }
+
+    // Override tema lokal: semua panel mengikuti mode terang/gelap
+    val colorScheme = remember(darkMode) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (darkMode) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        } else {
+            if (darkMode) darkColorScheme() else lightColorScheme()
+        }
+    }
 
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(DEFAULT_CENTER, DEFAULT_ZOOM)
@@ -107,110 +150,166 @@ fun MapScreen(modifier: Modifier = Modifier) {
     var gjkPlaying by remember { mutableStateOf(false) }
 
     // ===== Koordinat TERKUNCI saat tombol di-PLAY =====
-    // null = stop / belum pernah play (marker hilang + chip kosong)
     var grbCoord by remember { mutableStateOf<LatLng?>(null) }
     var gjkCoord by remember { mutableStateOf<LatLng?>(null) }
 
-    // Animasi kamera (pin tengah) menuju koordinat marker
+    // Animasi kamera (pin tengah) menuju koordinat
     fun flyTo(coord: LatLng) {
         scope.launch {
             cameraPositionState.animate(
                 CameraUpdateFactory.newLatLngZoom(
                     coord,
-                    cameraPositionState.position.zoom // pertahankan zoom saat ini
+                    cameraPositionState.position.zoom
                 )
             )
         }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
-
-        // ===== Google Map full width + marker GRB/GJK =====
-        GoogleMap(
-            modifier = Modifier.fillMaxSize(),
-            cameraPositionState = cameraPositionState,
-            uiSettings = remember { MapUiSettings(zoomControlsEnabled = false) },
-            properties = remember(locationGranted) {
-                MapProperties(isMyLocationEnabled = locationGranted)
-            }
-        ) {
-            // Marker GRB — pin MERAH, muncul saat PLAY, hilang saat STOP
-            grbCoord?.let { coord ->
-                Marker(
-                    state = rememberMarkerState(key = "grb_$coord", position = coord),
-                    title = "GRB",
-                    icon = grbMarkerIcon,
-                    anchor = Offset(0.5f, 1.0f)
-                )
-            }
-            // Marker GJK — pin BIRU, muncul saat PLAY, hilang saat STOP
-            gjkCoord?.let { coord ->
-                Marker(
-                    state = rememberMarkerState(key = "gjk_$coord", position = coord),
-                    title = "GJK",
-                    icon = gjkMarkerIcon,
-                    anchor = Offset(0.5f, 1.0f)
-                )
-            }
+    // ===== Autofocus: animasi kamera ke lokasi terakhir perangkat =====
+    fun autoFocus() {
+        if (!locationGranted) {
+            Toast.makeText(context, "Izin lokasi belum diberikan", Toast.LENGTH_SHORT).show()
+            return
         }
-
-        // ===== Pin HIJAU tetap di tengah layar =====
-        CenterPin(modifier = Modifier.align(Alignment.Center))
-
-        // ===== Panel chip koordinat: PIN + GRB + GJK (atas-tengah, wrap-content) =====
-        CoordinatePanel(
-            pinCoord = target,
-            grbCoord = grbCoord,
-            grbPlaying = grbPlaying,
-            gjkCoord = gjkCoord,
-            gjkPlaying = gjkPlaying,
-            onGrbChipClick = { grbCoord?.let { flyTo(it) } },
-            onGjkChipClick = { gjkCoord?.let { flyTo(it) } },
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .statusBarsPadding()
-                .padding(top = 4.dp)
-        )
-
-        // ===== Panel tombol vertikal (moveable + lock) =====
-        PlayControlPanel(
-            grbPlaying = grbPlaying,
-            gjkPlaying = gjkPlaying,
-            onGrbToggle = {
-                if (!grbPlaying) {
-                    // PLAY: kunci koordinat tengah layar saat ini -> chip + marker
-                    grbCoord = cameraPositionState.position.target
-                    grbPlaying = true
-                } else {
-                    // STOP: hapus marker + kosongkan chip
-                    grbCoord = null
-                    grbPlaying = false
+        val ok = runCatching {
+            val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val loc = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                ?: lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER)
+            if (loc != null) {
+                scope.launch {
+                    cameraPositionState.animate(
+                        CameraUpdateFactory.newLatLngZoom(
+                            LatLng(loc.latitude, loc.longitude),
+                            cameraPositionState.position.zoom
+                        )
+                    )
                 }
-            },
-            onGjkToggle = {
-                if (!gjkPlaying) {
-                    // PLAY: kunci koordinat tengah layar saat ini -> chip + marker
-                    gjkCoord = cameraPositionState.position.target
-                    gjkPlaying = true
-                } else {
-                    // STOP: hapus marker + kosongkan chip
-                    gjkCoord = null
-                    gjkPlaying = false
+                true
+            } else {
+                false
+            }
+        }.getOrDefault(false)
+
+        if (!ok) {
+            Toast.makeText(context, "Lokasi belum tersedia, coba lagi", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // ===== Zoom IN: sekali tap langsung ke zoom MAKSIMAL =====
+    fun zoomInMax() {
+        scope.launch {
+            val maxZoom = if (cameraPositionState.maxZoom > 0f) cameraPositionState.maxZoom else 21f
+            cameraPositionState.animate(CameraUpdateFactory.zoomTo(maxZoom))
+        }
+    }
+
+    // ===== Zoom OUT: mundur 2 level per tap =====
+    fun zoomOut() {
+        scope.launch {
+            cameraPositionState.animate(CameraUpdateFactory.zoomBy(-2f))
+        }
+    }
+
+    MaterialTheme(colorScheme = colorScheme) {
+        Box(modifier = modifier.fillMaxSize()) {
+
+            // ===== Google Map full width + marker GRB/GJK =====
+            GoogleMap(
+                modifier = Modifier.fillMaxSize(),
+                cameraPositionState = cameraPositionState,
+                uiSettings = remember { MapUiSettings(zoomControlsEnabled = false) },
+                properties = remember(locationGranted, darkMode) {
+                    MapProperties(
+                        isMyLocationEnabled = locationGranted,
+                        mapStyleOptions = if (darkMode) MapStyleOptions(DARK_MAP_STYLE) else null
+                    )
                 }
-            },
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = 16.dp)
-        )
+            ) {
+                // Marker GRB — pin MERAH, muncul saat PLAY, hilang saat STOP
+                grbCoord?.let { coord ->
+                    Marker(
+                        state = rememberMarkerState(key = "grb_$coord", position = coord),
+                        title = "GRB",
+                        icon = grbMarkerIcon,
+                        anchor = Offset(0.5f, 1.0f)
+                    )
+                }
+                // Marker GJK — pin BIRU, muncul saat PLAY, hilang saat STOP
+                gjkCoord?.let { coord ->
+                    Marker(
+                        state = rememberMarkerState(key = "gjk_$coord", position = coord),
+                        title = "GJK",
+                        icon = gjkMarkerIcon,
+                        anchor = Offset(0.5f, 1.0f)
+                    )
+                }
+            }
+
+            // ===== Pin HIJAU tetap di tengah layar =====
+            CenterPin(modifier = Modifier.align(Alignment.Center))
+
+            // ===== Panel chip koordinat: PIN + GRB + GJK (atas-tengah, wrap-content) =====
+            CoordinatePanel(
+                pinCoord = target,
+                grbCoord = grbCoord,
+                grbPlaying = grbPlaying,
+                gjkCoord = gjkCoord,
+                gjkPlaying = gjkPlaying,
+                onGrbChipClick = { grbCoord?.let { flyTo(it) } },
+                onGjkChipClick = { gjkCoord?.let { flyTo(it) } },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 4.dp)
+            )
+
+            // ===== Panel tombol GRB/GJK (moveable + lock) =====
+            PlayControlPanel(
+                grbPlaying = grbPlaying,
+                gjkPlaying = gjkPlaying,
+                onGrbToggle = {
+                    if (!grbPlaying) {
+                        grbCoord = cameraPositionState.position.target
+                        grbPlaying = true
+                    } else {
+                        grbCoord = null
+                        grbPlaying = false
+                    }
+                },
+                onGjkToggle = {
+                    if (!gjkPlaying) {
+                        gjkCoord = cameraPositionState.position.target
+                        gjkPlaying = true
+                    } else {
+                        gjkCoord = null
+                        gjkPlaying = false
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 16.dp)
+            )
+
+            // ===== Panel utilitas: Autofocus / Terang-Gelap / Lock / Zoom (moveable + lock) =====
+            UtilityPanel(
+                darkMode = darkMode,
+                onAutoFocus = { autoFocus() },
+                onToggleDark = { darkMode = !darkMode },
+                onZoomIn = { zoomInMax() },
+                onZoomOut = { zoomOut() },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .padding(end = 16.dp, bottom = 16.dp)
+            )
+        }
     }
 }
 
 // =====================================================================
-// Ikon marker pin-shape — AMAN dari FC:
-//  1. MapsInitializer.initialize() (double-safety, sudah juga di MainActivity)
-//  2. runCatching: jika render bitmap gagal ->
-//  3. fallback ke defaultMarker bawaan Google
+// Ikon marker pin-shape — AMAN dari FC (runCatching + fallback defaultMarker)
 // =====================================================================
 
 @Composable
@@ -251,12 +350,7 @@ private fun CenterPin(modifier: Modifier = Modifier) {
 }
 
 // =====================================================================
-// Panel chip koordinat (PIN + GRB + GJK)
-//  - Panel wrap-content: lebar = chip terlebar (IntrinsicSize.Max)
-//  - Tap PIN      = collapse jadi icon mata
-//  - Tap GRB/GJK  = pin/kamera animasi menuju markernya
-//  - Icon chip GRB = pin MERAH, icon chip GJK = pin BIRU (sama dgn marker)
-//    Penuh warna saat playing, redup saat stop
+// Panel chip koordinat (PIN + GRB + GJK) — wrap-content + IntrinsicSize.Max
 // =====================================================================
 
 @Composable
@@ -287,7 +381,6 @@ private fun CoordinatePanel(
                     .padding(horizontal = 10.dp, vertical = 6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Chip PIN — tap = collapse semua chip menjadi icon mata
                 ChipRow(
                     leading = {
                         Icon(
@@ -309,7 +402,6 @@ private fun CoordinatePanel(
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                 )
 
-                // Chip GRB — icon pin MERAH (sama seperti marker GRB), tap = fly ke marker
                 ChipRow(
                     leading = {
                         Icon(
@@ -332,7 +424,6 @@ private fun CoordinatePanel(
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                 )
 
-                // Chip GJK — icon pin BIRU (sama seperti marker GJK), tap = fly ke marker
                 ChipRow(
                     leading = {
                         Icon(
@@ -350,7 +441,6 @@ private fun CoordinatePanel(
             }
         }
     } else {
-        // State collapsed: icon mata — tap = tampilkan chip lagi
         Surface(
             modifier = modifier
                 .clip(CircleShape)
@@ -409,9 +499,7 @@ private fun ChipRow(
 }
 
 // =====================================================================
-// Panel kontrol — susunan vertikal:
-//   [tombol GRB] -> [label GRB] -> [lock/unlock] -> [label GJK] -> [tombol GJK]
-// Movable (drag) dengan tombol lock/unlock.
+// Panel tombol GRB/GJK — vertikal + lock di tengah, movable
 // =====================================================================
 
 @Composable
@@ -454,7 +542,6 @@ private fun PlayControlPanel(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 1. Tombol play/stop GRB
             PlayCircleButton(
                 playing = grbPlaying,
                 activeColor = GRB_RED,
@@ -464,43 +551,18 @@ private fun PlayControlPanel(
 
             Spacer(Modifier.height(5.dp))
 
-            // 2. Label GRB (di bawah tombol)
-            PlayLabel(
-                text = "GRB",
-                playing = grbPlaying,
-                activeColor = GRB_RED
-            )
+            PlayLabel(text = "GRB", playing = grbPlaying, activeColor = GRB_RED)
 
             Spacer(Modifier.height(8.dp))
 
-            // 3. Lock/unlock movable (di tengah)
-            IconButton(
-                onClick = { locked = !locked },
-                modifier = Modifier.size(28.dp)
-            ) {
-                Icon(
-                    painter = painterResource(
-                        if (locked) R.drawable.ic_lock else R.drawable.ic_unlock
-                    ),
-                    contentDescription = if (locked) "Buka kunci" else "Kunci posisi",
-                    tint = if (locked) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
+            LockButton(locked = locked, onToggle = { locked = !locked })
 
             Spacer(Modifier.height(8.dp))
 
-            // 4. Label GJK (di atas tombol)
-            PlayLabel(
-                text = "GJK",
-                playing = gjkPlaying,
-                activeColor = GJK_BLUE
-            )
+            PlayLabel(text = "GJK", playing = gjkPlaying, activeColor = GJK_BLUE)
 
             Spacer(Modifier.height(5.dp))
 
-            // 5. Tombol play/stop GJK
             PlayCircleButton(
                 playing = gjkPlaying,
                 activeColor = GJK_BLUE,
@@ -553,6 +615,156 @@ private fun PlayLabel(
         fontWeight = FontWeight.Bold,
         color = if (playing) activeColor else MaterialTheme.colorScheme.onSurface
     )
+}
+
+// =====================================================================
+// Panel utilitas — vertikal:
+//   [Autofocus] -> [Terang/Gelap] -> [lock/unlock] -> [Zoom In] -> [Zoom Out]
+// Movable (drag) dengan lock terpisah dari panel play.
+// =====================================================================
+
+@Composable
+private fun UtilityPanel(
+    darkMode: Boolean,
+    onAutoFocus: () -> Unit,
+    onToggleDark: () -> Unit,
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var locked by remember { mutableStateOf(false) }
+    var dragOffset by remember { mutableStateOf(Offset.Zero) }
+
+    Surface(
+        modifier = modifier
+            .offset { IntOffset(dragOffset.x.roundToInt(), dragOffset.y.roundToInt()) }
+            .then(
+                if (!locked) {
+                    Modifier.pointerInput(locked) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            dragOffset += dragAmount
+                        }
+                    }
+                } else {
+                    Modifier
+                }
+            ),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+        tonalElevation = 3.dp,
+        shadowElevation = 8.dp,
+        border = BorderStroke(
+            1.dp,
+            if (locked) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.outlineVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // 1. Autofocus
+            UtilityButton(
+                iconRes = R.drawable.ic_my_location,
+                label = "Autofocus",
+                active = false,
+                onClick = onAutoFocus
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // 2. Terang/Gelap
+            UtilityButton(
+                iconRes = R.drawable.ic_brightness,
+                label = "Terang/Gelap",
+                active = darkMode,
+                onClick = onToggleDark
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // 3. Lock/unlock movable panel ini
+            LockButton(locked = locked, onToggle = { locked = !locked })
+
+            Spacer(Modifier.height(8.dp))
+
+            // 4. Zoom In (tap = langsung zoom maksimal)
+            UtilityButton(
+                iconRes = R.drawable.ic_zoom_in,
+                label = "Zoom In",
+                active = false,
+                onClick = onZoomIn
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // 5. Zoom Out (mundur 2 level)
+            UtilityButton(
+                iconRes = R.drawable.ic_zoom_out,
+                label = "Zoom Out",
+                active = false,
+                onClick = onZoomOut
+            )
+        }
+    }
+}
+
+@Composable
+private fun UtilityButton(
+    iconRes: Int,
+    label: String,
+    active: Boolean,
+    onClick: () -> Unit
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Surface(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .clickable(onClick = onClick),
+            shape = CircleShape,
+            color = if (active) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.primaryContainer,
+            shadowElevation = 2.dp
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    painter = painterResource(iconRes),
+                    contentDescription = label,
+                    tint = if (active) MaterialTheme.colorScheme.onPrimary
+                    else MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+        Spacer(Modifier.height(3.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = if (active) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+@Composable
+private fun LockButton(locked: Boolean, onToggle: () -> Unit) {
+    IconButton(
+        onClick = onToggle,
+        modifier = Modifier.size(28.dp)
+    ) {
+        Icon(
+            painter = painterResource(
+                if (locked) R.drawable.ic_lock else R.drawable.ic_unlock
+            ),
+            contentDescription = if (locked) "Buka kunci" else "Kunci posisi",
+            tint = if (locked) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp)
+        )
+    }
 }
 
 // =====================================================================

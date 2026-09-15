@@ -1,87 +1,67 @@
 package com.aya.module.ui
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.aya.module.MapViewModel
-import com.aya.module.ui.components.CoordinateBadge
-import com.aya.module.ui.components.LeftControlPanel
-import com.aya.module.ui.components.RightControlPanel
-import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
-import com.google.maps.android.compose.*
-import kotlinx.coroutines.launch
+import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.rememberCameraPositionState
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
-fun MapScreen(viewModel: MapViewModel = viewModel()) {
-    val uiState by viewModel.uiState.collectAsState()
-    val coroutineScope = rememberCoroutineScope()
-
+fun MapScreen() {
+    // Koordinat awal (misal: Jakarta)
+    val defaultLocation = LatLng(-6.200000, 106.816666)
+    
     val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(uiState.currentPosition, uiState.zoomLevel)
+        position = CameraPosition.fromLatLngZoom(defaultLocation, 15f)
     }
 
-    LaunchedEffect(uiState.currentPosition) {
-        cameraPositionState.animate(
-            CameraUpdateFactory.newLatLng(uiState.currentPosition)
-        )
+    // Mendeteksi perubahan lokasi tengah saat peta bergeser
+    LaunchedEffect(cameraPositionState) {
+        snapshotFlow { cameraPositionState.position.target }
+            .distinctUntilChanged()
+            .collect { centerLatLng ->
+                // Lokasi tengah peta saat ini:
+                // centerLatLng.latitude, centerLatLng.longitude
+            }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        // 1. Google Maps Fullscreen
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = cameraPositionState,
             uiSettings = MapUiSettings(
-                zoomControlsEnabled = false,
-                myLocationButtonEnabled = false,
-                compassEnabled = false
+                zoomControlsEnabled = false, // Menghilangkan tombol zoom agar tampilan bersih
+                myLocationButtonEnabled = true
             )
-        ) {
-            Marker(
-                state = MarkerState(position = uiState.currentPosition),
-                title = "Lokasi"
-            )
-        }
-
-        CoordinateBadge(
-            position = cameraPositionState.position.target,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .statusBarsPadding()
-                .padding(top = 16.dp)
         )
 
-        LeftControlPanel(
-            isLocked = uiState.isLocked,
-            onPointAClick = { viewModel.setPointA() },
-            onPointBClick = { viewModel.setPointB() },
-            onLockClick = { viewModel.toggleLock() },
-            onFavClick = { },
-            onJitterClick = { viewModel.applyJitter() },
+        // 2. Fixed Center Pin (Pin diam di tengah layar)
+        Icon(
+            imageVector = Icons.Default.LocationOn,
+            contentDescription = "Center Pin",
+            tint = Color.Red,
             modifier = Modifier
-                .align(Alignment.CenterStart)
-                .padding(start = 12.dp)
-        )
-
-        RightControlPanel(
-            onFullscreenClick = { },
-            onLockClick = { viewModel.toggleLock() },
-            onZoomInClick = {
-                coroutineScope.launch {
-                    cameraPositionState.animate(CameraUpdateFactory.zoomIn())
-                }
-            },
-            onZoomOutClick = {
-                coroutineScope.launch {
-                    cameraPositionState.animate(CameraUpdateFactory.zoomOut())
-                }
-            },
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 12.dp)
+                .size(48.dp)
+                .align(Alignment.Center)
+                // Menggeser padding bawah sedikit agar ujung bawah jarum pin tepat berada di titik tengah layar
+                .padding(bottom = 24.dp) 
         )
     }
 }

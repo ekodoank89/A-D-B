@@ -198,6 +198,10 @@ fun MapScreen(modifier: Modifier = Modifier) {
     var utilLocked by rememberPersistentBoolean("util_locked", false)
     var utilDragOffset by rememberPersistentOffset("util_drag", Offset.Zero)
 
+    // ===== First launch: pin otomatis ke titik biru (HANYA SEKALI sepanjang umur app) =====
+    // Flag persisten: setelah sukses sekali, tidak pernah auto-move lagi.
+    var firstLaunchDone by rememberPersistentBoolean("first_launch_done", false)
+
     // ===== Simpan posisi kamera tiap berubah (throttle 1 detik) =====
     LaunchedEffect(cameraPositionState) {
         var lastSave = 0L
@@ -230,6 +234,40 @@ fun MapScreen(modifier: Modifier = Modifier) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // ===== FIRST LAUNCH: begitu izin lokasi granted, pin animasi ke titik biru =====
+    // Hanya dijalankan jika flag belum pernah diset; sukses -> flag disimpan permanen.
+    // Jika lokasi belum tersedia, dicoba lagi di pembukaan aplikasi berikutnya.
+    LaunchedEffect(locationGranted) {
+        if (locationGranted && !firstLaunchDone) {
+            val ok = runCatching {
+                val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+                val loc = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                    ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                    ?: lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER)
+                if (loc != null) {
+                    scope.launch {
+                        cameraPositionState.animate(
+                            CameraUpdateFactory.newCameraPosition(
+                                CameraPosition(
+                                    LatLng(loc.latitude, loc.longitude),
+                                    DEFAULT_ZOOM,
+                                    0f, // tilt normal
+                                    0f  // bearing normal (utara di atas)
+                                )
+                            )
+                        )
+                    }
+                    true
+                } else {
+                    false
+                }
+            }.getOrDefault(false)
+            if (ok) {
+                firstLaunchDone = true // tandai selesai — tidak akan auto-move lagi
+            }
+        }
+    }
+
     // Animasi kamera (pin tengah) menuju koordinat
     fun flyTo(coord: LatLng) {
         scope.launch {
@@ -242,7 +280,10 @@ fun MapScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    // ===== Autofocus: animasi kamera ke lokasi terakhir perangkat =====
+    // ===== Autofocus + KOMPAS =====
+    // Satu tap: animasi ke lokasi terakhir perangkat SEKALIGUS menormalkan map
+    // yang di-rotate (bearing -> 0, tilt -> 0) — gabungan fungsi tombol lokasi
+    // dan tombol kompas bawaan Google.
     fun autoFocus() {
         if (!locationGranted) {
             Toast.makeText(context, "Izin lokasi belum diberikan", Toast.LENGTH_SHORT).show()
@@ -256,9 +297,13 @@ fun MapScreen(modifier: Modifier = Modifier) {
             if (loc != null) {
                 scope.launch {
                     cameraPositionState.animate(
-                        CameraUpdateFactory.newLatLngZoom(
-                            LatLng(loc.latitude, loc.longitude),
-                            cameraPositionState.position.zoom
+                        CameraUpdateFactory.newCameraPosition(
+                            CameraPosition(
+                                LatLng(loc.latitude, loc.longitude),
+                                cameraPositionState.position.zoom, // zoom dipertahankan
+                                0f, // tilt dinormalkan
+                                0f  // bearing dinormalkan (utara di atas)
+                            )
                         )
                     )
                 }
@@ -294,7 +339,14 @@ fun MapScreen(modifier: Modifier = Modifier) {
             GoogleMap(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
-                uiSettings = remember { MapUiSettings(zoomControlsEnabled = false) },
+                // SEMUA UI bawaan Google dimatikan — digantikan panel custom kita
+                uiSettings = remember {
+                    MapUiSettings(
+                        zoomControlsEnabled = false,
+                        compassEnabled = false,         // hilangkan KOMPAS bawaan Google
+                        myLocationButtonEnabled = false // hilangkan tombol LOKASI bawaan Google
+                    )
+                },
                 properties = remember(locationGranted, darkMode) {
                     MapProperties(
                         isMyLocationEnabled = locationGranted,
@@ -375,6 +427,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
             )
 
             // ===== Panel utilitas icon-only (moveable + lock, posisi persisten) =====
+            // Autofocus kini = autofocus + kompas (normalisasi rotasi map)
             UtilityPanel(
                 darkMode = darkMode,
                 onAutoFocus = { autoFocus() },
@@ -660,10 +713,8 @@ private fun ChipRow(
 }
 
 // =====================================================================
-// Panel tombol GRB/GJK — FIX DRAG:
-// dragOffset kini parameter biasa; pointerInput(locked) LAMA membaca nilai
-// basi sehingga panel tidak bisa digeser. Solusi: rememberUpdatedState +
-// pointerInput(Unit) + cek locked DI DALAM handler (nilai selalu terkini).
+// Panel tombol GRB/GJK — movable + lock (rememberUpdatedState agar
+// closure drag selalu membaca nilai terkini)
 // =====================================================================
 
 @Composable
@@ -782,7 +833,8 @@ private fun PlayLabel(
 }
 
 // =====================================================================
-// Panel utilitas — FIX DRAG (sama seperti PlayControlPanel)
+// Panel utilitas — ICON-ONLY, vertikal:
+//   [Autofocus+Kompas] -> [Terang/Gelap] -> [lock] -> [+] -> [-]
 // =====================================================================
 
 @Composable
@@ -826,10 +878,10 @@ private fun UtilityPanel(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 1. Autofocus (icon saja)
+            // 1. Autofocus + Kompas (icon saja)
             UtilityButton(
                 iconRes = R.drawable.ic_my_location,
-                contentDesc = "Autofocus",
+                contentDesc = "Autofocus & Normalisasi Map",
                 active = false,
                 onClick = onAutoFocus
             )

@@ -22,13 +22,20 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
+      # 1. Unduh Gradle & Generate wrapper (termasuk gradle-wrapper.jar) secara otomatis
+      - name: Generate Gradle Wrapper
+        run: gradle wrapper --gradle-version 8.7
+
+      # 2. Beri izin eksekusi pada file gradlew
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      # 3. Decode Keystore dari GitHub Secrets
       - name: Decode Keystore
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > app/keystore.jks
 
+      # 4. Jalankan Build APK
       - name: Build Release APK
         env:
           MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
@@ -37,6 +44,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: ./gradlew assembleRelease
 
+      # 5. Simpan APK sebagai Artifact
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:

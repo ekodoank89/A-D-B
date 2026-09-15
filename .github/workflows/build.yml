@@ -45,15 +45,6 @@ jobs:
             gradle wrapper
           fi
 
-      - name: Build Release APK
-        env:
-          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew assembleRelease
-
-
       # 5. Build Release APK
       - name: Build Release APK
         env:

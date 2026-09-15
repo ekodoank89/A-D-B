@@ -12,9 +12,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -200,8 +202,9 @@ private fun CenterPin(modifier: Modifier = Modifier) {
 
 // =====================================================================
 // Panel chip koordinat (PIN + GRB + GJK)
-//  - Panel wrap-content: lebar hanya selebar chip terpanjang, TIDAK full-width
-//  - Padding kecil di dalam panel agar koordinat tidak rapat ke tepi panel
+//  - Panel wrap-content murni: lebar = chip terlebar (sesuai ukuran koordinat)
+//  - Trik: width(IntrinsicSize.Max) menetralkan fillMaxWidth bawaan
+//    HorizontalDivider yang menyebabkan panel stretch penuh kanan-kiri
 //  - Tap PIN      = collapse jadi icon mata
 //  - Tap GRB/GJK  = pin/kamera animasi menuju markernya
 // =====================================================================
@@ -221,7 +224,7 @@ private fun CoordinatePanel(
 
     if (expanded) {
         Surface(
-            modifier = modifier, // wrap-content: mengikuti lebar isi
+            modifier = modifier, // wrap-content: selebar isi saja
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
             tonalElevation = 2.dp,
@@ -229,8 +232,11 @@ private fun CoordinatePanel(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(
-                // Padding kecil: jarak antara tepi panel dan koordinat
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                // KUNCI FIX: lebar kolom = lebar intrinsik child terlebar (chip koordinat),
+                // bukan lebar layar. Divider fillMaxWidth lalu hanya mengisi lebar ini.
+                modifier = Modifier
+                    .width(IntrinsicSize.Max)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // Chip PIN — tap = collapse semua chip menjadi icon mata
@@ -249,7 +255,9 @@ private fun CoordinatePanel(
                 )
 
                 HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 2.dp),
+                    modifier = Modifier
+                        .fillMaxWidth() // mengisi lebar intrinsik kolom, BUKAN layar
+                        .padding(vertical = 2.dp),
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                 )
 
@@ -258,12 +266,14 @@ private fun CoordinatePanel(
                     leading = { StatusDot(grbPlaying) },
                     label = "GRB",
                     text = formatCoord(grbCoord),
-                    enabled = grbCoord != null, // aktif hanya jika ada marker
+                    enabled = grbCoord != null,
                     onClick = onGrbChipClick
                 )
 
                 HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 2.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                 )
 
@@ -272,7 +282,7 @@ private fun CoordinatePanel(
                     leading = { StatusDot(gjkPlaying) },
                     label = "GJK",
                     text = formatCoord(gjkCoord),
-                    enabled = gjkCoord != null, // aktif hanya jika ada marker
+                    enabled = gjkCoord != null,
                     onClick = onGjkChipClick
                 )
             }
@@ -310,7 +320,7 @@ private fun ChipRow(
     onClick: () -> Unit
 ) {
     Row(
-        // wrap-content: lebar hanya selebar isinya — TIDAK fillMaxWidth
+        // wrap-content: lebar hanya selebar isinya
         modifier = Modifier
             .clip(RoundedCornerShape(50))
             .clickable(enabled = enabled, onClick = onClick)

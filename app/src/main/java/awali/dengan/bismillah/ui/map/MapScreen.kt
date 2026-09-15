@@ -2,11 +2,15 @@ package awali.dengan.bismillah.ui.map
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.location.LocationManager
+import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -40,6 +44,7 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,11 +59,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import awali.dengan.bismillah.R
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.MapsInitializer
@@ -770,14 +778,23 @@ private fun formatLatLng(latLng: LatLng): String =
 private fun formatCoord(latLng: LatLng?): String =
     latLng?.let { formatLatLng(it) } ?: "--.------, --.------"
 
-/**
- * Izin LOKASI + NOTIFIKASI saat pertama kali aplikasi dibuka.
- * POST_NOTIFICATIONS hanya di Android 13+ (API 33).
- */
+// =====================================================================
+// Sistem izin BERURUTAN + DOUBLE CHECK:
+//   1. LOKASI (foreground: fine + coarse)
+//   2. LOKASI "Selalu izinkan" (background) — hanya jika foreground granted
+//   3. NOTIFIKASI (Android 13+)
+//   4. BATERAI "Tanpa pembatasan" (dialog Doze exemption)
+// Dijalankan setiap aplikasi dibuka; jika ada izin hilang saat kembali
+// ke aplikasi (ON_RESUME), urutan dijalankan ulang.
+// =====================================================================
+
+private enum class PermissionStep { LOCATION, BACKGROUND, NOTIFICATION, BATTERY, DONE }
+
 @Composable
 private fun rememberAppPermissions(): Boolean {
     val context = LocalContext.current
 
+    // Status izin lokasi (dipakai layer lokasi biru di map)
     var locationGranted by remember {
         mutableStateOf(
             isGranted(context, Manifest.permission.ACCESS_FINE_LOCATION) ||
@@ -785,30 +802,117 @@ private fun rememberAppPermissions(): Boolean {
         )
     }
 
-    val permissions = remember {
-        buildList {
-            add(Manifest.permission.ACCESS_FINE_LOCATION)
-            add(Manifest.permission.ACCESS_COARSE_LOCATION)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                add(Manifest.permission.POST_NOTIFICATIONS)
+    // Step urutan izin (state machine)
+    var step by remember { mutableStateOf(PermissionStep.LOCATION) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // ===== Double check: setiap kembali ke aplikasi, verifikasi ulang =====
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                locationGranted =
+                    isGranted(context, Manifest.permission.ACCESS_FINE_LOCATION) ||
+                    isGranted(context, Manifest.permission.ACCESS_COARSE_LOCATION)
+
+                val anyMissing = !locationGranted ||
+                    !isGranted(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) ||
+                    (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        !isGranted(context, Manifest.permission.POST_NOTIFICATIONS)) ||
+                    !isIgnoringBatteryOptimizations(context)
+
+                if (anyMissing && step == PermissionStep.DONE) {
+                    step = PermissionStep.LOCATION // jalankan ulang urutan
+                }
             }
         }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val launcher = rememberLauncherForActivityResult(
+    // 1) Launcher LOKASI foreground
+    val locationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
-        if ((result[Manifest.permission.ACCESS_FINE_LOCATION] ?: false) ||
-            (result[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false)
-        ) {
-            locationGranted = true
-        }
+        locationGranted =
+            (result[Manifest.permission.ACCESS_FINE_LOCATION] == true) ||
+            (result[Manifest.permission.ACCESS_COARSE_LOCATION] == true)
+        step = PermissionStep.BACKGROUND
     }
 
-    LaunchedEffect(Unit) {
-        val notGranted = permissions.filterNot { isGranted(context, it) }
-        if (notGranted.isNotEmpty()) {
-            launcher.launch(notGranted.toTypedArray())
+    // 2) Launcher LOKASI "Selalu izinkan" (background)
+    val bgLocationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        step = PermissionStep.NOTIFICATION
+    }
+
+    // 3) Launcher NOTIFIKASI
+    val notifLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        step = PermissionStep.BATTERY
+    }
+
+    // 4) Launcher BATERAI (dialog "Tanpa pembatasan")
+    val batteryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { _ ->
+        step = PermissionStep.DONE
+    }
+
+    // Jalankan step berikutnya (urutan: Lokasi -> Selalu -> Notifikasi -> Baterai)
+    LaunchedEffect(step) {
+        when (step) {
+            PermissionStep.LOCATION -> {
+                if (locationGranted) {
+                    step = PermissionStep.BACKGROUND
+                } else {
+                    locationLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
+                        )
+                    )
+                }
+            }
+
+            PermissionStep.BACKGROUND -> {
+                // Background hanya valid jika foreground sudah granted (aturan Android 11+)
+                if (!locationGranted ||
+                    isGranted(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                ) {
+                    step = PermissionStep.NOTIFICATION
+                } else {
+                    bgLocationLauncher.launch(
+                        arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    )
+                }
+            }
+
+            PermissionStep.NOTIFICATION -> {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                    isGranted(context, Manifest.permission.POST_NOTIFICATIONS)
+                ) {
+                    step = PermissionStep.BATTERY
+                } else {
+                    notifLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+                }
+            }
+
+            PermissionStep.BATTERY -> {
+                if (isIgnoringBatteryOptimizations(context)) {
+                    step = PermissionStep.DONE
+                } else {
+                    batteryLauncher.launch(
+                        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                            data = Uri.parse("package:${context.packageName}")
+                        }
+                    )
+                }
+            }
+
+            PermissionStep.DONE -> { /* Semua izin selesai diverifikasi */ }
         }
     }
 
@@ -817,3 +921,9 @@ private fun rememberAppPermissions(): Boolean {
 
 private fun isGranted(context: Context, permission: String): Boolean =
     ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+
+private fun isIgnoringBatteryOptimizations(context: Context): Boolean =
+    runCatching {
+        val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        pm.isIgnoringBatteryOptimizations(context.packageName)
+    }.getOrDefault(false)

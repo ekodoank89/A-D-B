@@ -1,6 +1,6 @@
 pluginManagement {
     repositories {
-        google() // <--- Pastikan baris ini ada
+        google() // <--- Wajib ditambahkan di sini
         mavenCentral()
         gradlePluginPortal()
     }

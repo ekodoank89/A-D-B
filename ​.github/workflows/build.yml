@@ -5,7 +5,7 @@ on:
     branches: [ "main", "master" ]
   pull_request:
     branches: [ "main", "master" ]
-  workflow_dispatch: # Pemicu ini yang memunculkan menu build manual (Run workflow)
+  workflow_dispatch:
 
 jobs:
   build:

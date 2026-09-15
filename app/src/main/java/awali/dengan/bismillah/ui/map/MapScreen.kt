@@ -79,6 +79,7 @@ import kotlin.math.roundToInt
 
 private val DEFAULT_CENTER = LatLng(-6.2088, 106.8456) // Monas, Jakarta
 private const val DEFAULT_ZOOM = 17f
+private const val MAX_ZOOM = 21f // zoomTo() otomatis clamp ke max map
 private val PIN_SIZE = 40.dp
 
 // ===== Warna =====
@@ -199,8 +200,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
     // ===== Zoom IN: sekali tap langsung ke zoom MAKSIMAL =====
     fun zoomInMax() {
         scope.launch {
-            val maxZoom = if (cameraPositionState.maxZoom > 0f) cameraPositionState.maxZoom else 21f
-            cameraPositionState.animate(CameraUpdateFactory.zoomTo(maxZoom))
+            cameraPositionState.animate(CameraUpdateFactory.zoomTo(MAX_ZOOM))
         }
     }
 
@@ -351,6 +351,8 @@ private fun CenterPin(modifier: Modifier = Modifier) {
 
 // =====================================================================
 // Panel chip koordinat (PIN + GRB + GJK) — wrap-content + IntrinsicSize.Max
+// Tap PIN = collapse; tap GRB/GJK = fly ke marker
+// Icon chip GRB = pin MERAH, GJK = pin BIRU (penuh saat play, redup saat stop)
 // =====================================================================
 
 @Composable
@@ -499,7 +501,7 @@ private fun ChipRow(
 }
 
 // =====================================================================
-// Panel tombol GRB/GJK — vertikal + lock di tengah, movable
+// Panel tombol GRB/GJK — vertikal: [GRB] [label] [lock] [label] [GJK], movable
 // =====================================================================
 
 @Composable
@@ -620,7 +622,7 @@ private fun PlayLabel(
 // =====================================================================
 // Panel utilitas — vertikal:
 //   [Autofocus] -> [Terang/Gelap] -> [lock/unlock] -> [Zoom In] -> [Zoom Out]
-// Movable (drag) dengan lock terpisah dari panel play.
+// Movable (drag) dengan lock independen dari panel play.
 // =====================================================================
 
 @Composable

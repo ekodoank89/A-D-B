@@ -46,6 +46,8 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -90,6 +92,9 @@ private const val DEFAULT_ZOOM = 17f
 private const val MAX_ZOOM = 21f // zoomTo() otomatis clamp ke max map
 private val PIN_SIZE = 40.dp
 
+// ===== Penyimpanan state persisten (tahan force stop) =====
+private const val PREFS_NAME = "adb_persistent_state"
+
 // ===== Warna =====
 private val PIN_GREEN = Color(0xFF2E7D32) // pin tengah: HIJAU
 private val GRB_RED = Color(0xFFE53935)   // marker GRB: MERAH
@@ -125,8 +130,8 @@ fun MapScreen(modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    // ===== Mode gelap (map style + tema panel UI) =====
-    var darkMode by remember { mutableStateOf(false) }
+    // ===== Mode gelap — PERSISTEN =====
+    var darkMode by rememberPersistentBoolean("dark_mode", false)
 
     // Override tema lokal: semua panel mengikuti mode terang/gelap
     val colorScheme = remember(darkMode) {
@@ -154,13 +159,24 @@ fun MapScreen(modifier: Modifier = Modifier) {
         fallbackHue = BitmapDescriptorFactory.HUE_BLUE
     )
 
-    // ===== Status play/stop =====
-    var grbPlaying by remember { mutableStateOf(false) }
-    var gjkPlaying by remember { mutableStateOf(false) }
+    // ===== Status play/stop — PERSISTEN =====
+    var grbPlaying by rememberPersistentBoolean("grb_playing", false)
+    var gjkPlaying by rememberPersistentBoolean("gjk_playing", false)
 
-    // ===== Koordinat TERKUNCI saat tombol di-PLAY =====
-    var grbCoord by remember { mutableStateOf<LatLng?>(null) }
-    var gjkCoord by remember { mutableStateOf<LatLng?>(null) }
+    // ===== Koordinat TERKUNCI saat PLAY — PERSISTEN (marker ikut muncul lagi) =====
+    var grbCoord by rememberPersistentLatLng("grb_coord")
+    var gjkCoord by rememberPersistentLatLng("gjk_coord")
+
+    // ===== Chip expanded/collapsed — PERSISTEN =====
+    var chipsExpanded by rememberPersistentBoolean("chips_expanded", true)
+
+    // ===== Lock & posisi geser panel play — PERSISTEN =====
+    var playLocked by rememberPersistentBoolean("play_locked", false)
+    var playDragOffset by rememberPersistentOffset("play_drag", Offset.Zero)
+
+    // ===== Lock & posisi geser panel utilitas — PERSISTEN =====
+    var utilLocked by rememberPersistentBoolean("util_locked", false)
+    var utilDragOffset by rememberPersistentOffset("util_drag", Offset.Zero)
 
     // Animasi kamera (pin tengah) menuju koordinat
     fun flyTo(coord: LatLng) {
@@ -234,7 +250,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                     )
                 }
             ) {
-                // Marker GRB — pin MERAH, muncul saat PLAY, hilang saat STOP
+                // Marker GRB — pin MERAH, muncul saat PLAY (termasuk hasil restore), hilang saat STOP
                 grbCoord?.let { coord ->
                     Marker(
                         state = rememberMarkerState(key = "grb_$coord", position = coord),
@@ -243,7 +259,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                         anchor = Offset(0.5f, 1.0f)
                     )
                 }
-                // Marker GJK — pin BIRU, muncul saat PLAY, hilang saat STOP
+                // Marker GJK — pin BIRU, muncul saat PLAY (termasuk hasil restore), hilang saat STOP
                 gjkCoord?.let { coord ->
                     Marker(
                         state = rememberMarkerState(key = "gjk_$coord", position = coord),
@@ -264,6 +280,8 @@ fun MapScreen(modifier: Modifier = Modifier) {
                 grbPlaying = grbPlaying,
                 gjkCoord = gjkCoord,
                 gjkPlaying = gjkPlaying,
+                expanded = chipsExpanded,
+                onExpandedChange = { chipsExpanded = it },
                 onGrbChipClick = { grbCoord?.let { flyTo(it) } },
                 onGjkChipClick = { gjkCoord?.let { flyTo(it) } },
                 modifier = Modifier
@@ -272,7 +290,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                     .padding(top = 4.dp)
             )
 
-            // ===== Panel tombol GRB/GJK (moveable + lock) =====
+            // ===== Panel tombol GRB/GJK (moveable + lock, posisi persisten) =====
             PlayControlPanel(
                 grbPlaying = grbPlaying,
                 gjkPlaying = gjkPlaying,
@@ -294,19 +312,27 @@ fun MapScreen(modifier: Modifier = Modifier) {
                         gjkPlaying = false
                     }
                 },
+                locked = playLocked,
+                onLockedChange = { playLocked = it },
+                dragOffset = playDragOffset,
+                onDragOffsetChange = { playDragOffset = it },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     .padding(bottom = 16.dp)
             )
 
-            // ===== Panel utilitas icon-only (moveable + lock) =====
+            // ===== Panel utilitas icon-only (moveable + lock, posisi persisten) =====
             UtilityPanel(
                 darkMode = darkMode,
                 onAutoFocus = { autoFocus() },
                 onToggleDark = { darkMode = !darkMode },
                 onZoomIn = { zoomInMax() },
                 onZoomOut = { zoomOut() },
+                locked = utilLocked,
+                onLockedChange = { utilLocked = it },
+                dragOffset = utilDragOffset,
+                onDragOffsetChange = { utilDragOffset = it },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .navigationBarsPadding()
@@ -314,6 +340,97 @@ fun MapScreen(modifier: Modifier = Modifier) {
             )
         }
     }
+}
+
+// =====================================================================
+// State PERSISTEN — disimpan ke SharedPreferences di setiap perubahan,
+// dimuat ulang saat aplikasi dibuka (termasuk setelah force stop).
+// =====================================================================
+
+@Composable
+private fun rememberPersistentBoolean(key: String, default: Boolean): MutableState<Boolean> {
+    val prefs = remember {
+        LocalContext.current.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    }
+    val state = remember { mutableStateOf(prefs.getBoolean(key, default)) }
+    SideEffect {
+        if (prefs.getBoolean(key, default) != state.value) {
+            prefs.edit().putBoolean(key, state.value).apply()
+        }
+    }
+    return state
+}
+
+@Composable
+private fun rememberPersistentFloat(key: String, default: Float): MutableState<Float> {
+    val prefs = remember {
+        LocalContext.current.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    }
+    val state = remember { mutableStateOf(prefs.getFloat(key, default)) }
+    SideEffect {
+        prefs.edit().putFloat(key, state.value).apply()
+    }
+    return state
+}
+
+// LatLng? — null disimpan dengan menghapus key (chip kosong / marker hilang)
+@Composable
+private fun rememberPersistentLatLng(key: String): MutableState<LatLng?> {
+    val prefs = remember {
+        LocalContext.current.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    }
+    val state = remember {
+        mutableStateOf<LatLng?>(
+            if (prefs.contains("${key}_lat") && prefs.contains("${key}_lng")) {
+                LatLng(
+                    Double.fromBits(prefs.getLong("${key}_lat", 0L)),
+                    Double.fromBits(prefs.getLong("${key}_lng", 0L))
+                )
+            } else {
+                null
+            }
+        )
+    }
+    SideEffect {
+        prefs.edit().apply {
+            val v = state.value
+            if (v == null) {
+                remove("${key}_lat")
+                remove("${key}_lng")
+            } else {
+                putLong("${key}_lat", v.latitude.toRawBits())
+                putLong("${key}_lng", v.longitude.toRawBits())
+            }
+        }.apply()
+    }
+    return state
+}
+
+// Offset (posisi geser panel)
+@Composable
+private fun rememberPersistentOffset(key: String, default: Offset): MutableState<Offset> {
+    val prefs = remember {
+        LocalContext.current.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    }
+    val state = remember {
+        mutableStateOf(
+            if (prefs.contains("${key}_x") && prefs.contains("${key}_y")) {
+                Offset(
+                    prefs.getFloat("${key}_x", 0f),
+                    prefs.getFloat("${key}_y", 0f)
+                )
+            } else {
+                default
+            }
+        )
+    }
+    SideEffect {
+        prefs.edit()
+            .putFloat("${key}_x", state.value.x)
+            .putFloat("${key}_y", state.value.y)
+            .apply()
+    }
+    return state
 }
 
 // =====================================================================
@@ -358,9 +475,7 @@ private fun CenterPin(modifier: Modifier = Modifier) {
 }
 
 // =====================================================================
-// Panel chip koordinat (PIN + GRB + GJK) — wrap-content + IntrinsicSize.Max
-// Tap PIN = collapse; tap GRB/GJK = fly ke marker
-// Icon chip GRB = pin MERAH, GJK = pin BIRU (penuh saat play, redup saat stop)
+// Panel chip koordinat (PIN + GRB + GJK) — expanded state persisten
 // =====================================================================
 
 @Composable
@@ -370,12 +485,12 @@ private fun CoordinatePanel(
     grbPlaying: Boolean,
     gjkCoord: LatLng?,
     gjkPlaying: Boolean,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
     onGrbChipClick: () -> Unit,
     onGjkChipClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var expanded by remember { mutableStateOf(true) }
-
     if (expanded) {
         Surface(
             modifier = modifier,
@@ -402,7 +517,7 @@ private fun CoordinatePanel(
                     },
                     label = "PIN",
                     text = formatLatLng(pinCoord),
-                    onClick = { expanded = false }
+                    onClick = { onExpandedChange(false) }
                 )
 
                 HorizontalDivider(
@@ -454,7 +569,7 @@ private fun CoordinatePanel(
         Surface(
             modifier = modifier
                 .clip(CircleShape)
-                .clickable { expanded = true },
+                .clickable { onExpandedChange(true) },
             shape = CircleShape,
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
             tonalElevation = 2.dp,
@@ -509,7 +624,7 @@ private fun ChipRow(
 }
 
 // =====================================================================
-// Panel tombol GRB/GJK — vertikal: [GRB] [label] [lock] [label] [GJK], movable
+// Panel tombol GRB/GJK — lock & posisi geser di-raise ke parent (persisten)
 // =====================================================================
 
 @Composable
@@ -518,11 +633,12 @@ private fun PlayControlPanel(
     gjkPlaying: Boolean,
     onGrbToggle: () -> Unit,
     onGjkToggle: () -> Unit,
+    locked: Boolean,
+    onLockedChange: (Boolean) -> Unit,
+    dragOffset: Offset,
+    onDragOffsetChange: (Offset) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var locked by remember { mutableStateOf(false) }
-    var dragOffset by remember { mutableStateOf(Offset.Zero) }
-
     Surface(
         modifier = modifier
             .offset { IntOffset(dragOffset.x.roundToInt(), dragOffset.y.roundToInt()) }
@@ -531,7 +647,7 @@ private fun PlayControlPanel(
                     Modifier.pointerInput(locked) {
                         detectDragGestures { change, dragAmount ->
                             change.consume()
-                            dragOffset += dragAmount
+                            onDragOffsetChange(dragOffset + dragAmount)
                         }
                     }
                 } else {
@@ -565,7 +681,7 @@ private fun PlayControlPanel(
 
             Spacer(Modifier.height(8.dp))
 
-            LockButton(locked = locked, onToggle = { locked = !locked })
+            LockButton(locked = locked, onToggle = { onLockedChange(!locked) })
 
             Spacer(Modifier.height(8.dp))
 
@@ -628,9 +744,7 @@ private fun PlayLabel(
 }
 
 // =====================================================================
-// Panel utilitas — ICON-ONLY (tanpa label), vertikal:
-//   [Autofocus] -> [Terang/Gelap] -> [lock/unlock] -> [+] -> [-]
-// Movable (drag) dengan lock independen dari panel play.
+// Panel utilitas — lock & posisi geser di-raise ke parent (persisten)
 // =====================================================================
 
 @Composable
@@ -640,11 +754,12 @@ private fun UtilityPanel(
     onToggleDark: () -> Unit,
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
+    locked: Boolean,
+    onLockedChange: (Boolean) -> Unit,
+    dragOffset: Offset,
+    onDragOffsetChange: (Offset) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var locked by remember { mutableStateOf(false) }
-    var dragOffset by remember { mutableStateOf(Offset.Zero) }
-
     Surface(
         modifier = modifier
             .offset { IntOffset(dragOffset.x.roundToInt(), dragOffset.y.roundToInt()) }
@@ -653,7 +768,7 @@ private fun UtilityPanel(
                     Modifier.pointerInput(locked) {
                         detectDragGestures { change, dragAmount ->
                             change.consume()
-                            dragOffset += dragAmount
+                            onDragOffsetChange(dragOffset + dragAmount)
                         }
                     }
                 } else {
@@ -695,7 +810,7 @@ private fun UtilityPanel(
             Spacer(Modifier.height(8.dp))
 
             // 3. Lock/unlock movable panel ini
-            LockButton(locked = locked, onToggle = { locked = !locked })
+            LockButton(locked = locked, onToggle = { onLockedChange(!locked) })
 
             Spacer(Modifier.height(8.dp))
 
@@ -780,12 +895,8 @@ private fun formatCoord(latLng: LatLng?): String =
 
 // =====================================================================
 // Sistem izin BERURUTAN + DOUBLE CHECK:
-//   1. LOKASI (foreground: fine + coarse)
-//   2. LOKASI "Selalu izinkan" (background) — hanya jika foreground granted
-//   3. NOTIFIKASI (Android 13+)
-//   4. BATERAI "Tanpa pembatasan" (dialog Doze exemption)
-// Dijalankan setiap aplikasi dibuka; jika ada izin hilang saat kembali
-// ke aplikasi (ON_RESUME), urutan dijalankan ulang.
+//   1. LOKASI (foreground) -> 2. LOKASI "Selalu izinkan" ->
+//   3. NOTIFIKASI (Android 13+) -> 4. BATERAI "Tanpa pembatasan"
 // =====================================================================
 
 private enum class PermissionStep { LOCATION, BACKGROUND, NOTIFICATION, BATTERY, DONE }
@@ -794,7 +905,6 @@ private enum class PermissionStep { LOCATION, BACKGROUND, NOTIFICATION, BATTERY,
 private fun rememberAppPermissions(): Boolean {
     val context = LocalContext.current
 
-    // Status izin lokasi (dipakai layer lokasi biru di map)
     var locationGranted by remember {
         mutableStateOf(
             isGranted(context, Manifest.permission.ACCESS_FINE_LOCATION) ||
@@ -802,7 +912,6 @@ private fun rememberAppPermissions(): Boolean {
         )
     }
 
-    // Step urutan izin (state machine)
     var step by remember { mutableStateOf(PermissionStep.LOCATION) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -822,7 +931,7 @@ private fun rememberAppPermissions(): Boolean {
                     !isIgnoringBatteryOptimizations(context)
 
                 if (anyMissing && step == PermissionStep.DONE) {
-                    step = PermissionStep.LOCATION // jalankan ulang urutan
+                    step = PermissionStep.LOCATION
                 }
             }
         }
@@ -861,7 +970,6 @@ private fun rememberAppPermissions(): Boolean {
         step = PermissionStep.DONE
     }
 
-    // Jalankan step berikutnya (urutan: Lokasi -> Selalu -> Notifikasi -> Baterai)
     LaunchedEffect(step) {
         when (step) {
             PermissionStep.LOCATION -> {
@@ -878,7 +986,6 @@ private fun rememberAppPermissions(): Boolean {
             }
 
             PermissionStep.BACKGROUND -> {
-                // Background hanya valid jika foreground sudah granted (aturan Android 11+)
                 if (!locationGranted ||
                     isGranted(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
                 ) {

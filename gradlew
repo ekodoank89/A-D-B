@@ -44,29 +44,29 @@ APP_NAME="Gradle"
 APP_BASE_NAME=`basename "$0"`
 
 # Add default JVM options here. You can also use JAVA_OPTS and GRADLE_OPTS to pass JVM options to this script.
-DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m"'
+DEFAULT_JVM_OPTS='-Xmx64m -Xms64m'
 
 # Use the maximum available dir size if HAVE_READLINK is set
 if [ -n "$HAVE_READLINK" ]; then
     MAX_FS_SIZE=`df -P . | tail -n 1 | awk '{print $2}'`
     if [ "$MAX_FS_SIZE" -gt 0 ]; then
-        DEFAULT_JVM_OPTS="$DEFAULT_JVM_OPTS \"-Dorg.gradle.internal.max.directory.size=$MAX_FS_SIZE\""
+        DEFAULT_JVM_OPTS="$DEFAULT_JVM_OPTS -Dorg.gradle.internal.max.directory.size=$MAX_FS_SIZE"
     fi
 fi
 
 # Use PSEUDO_TERMINAL if available
 if [ -n "$PSEUDO_TERMINAL" ]; then
-    DEFAULT_JVM_OPTS="$DEFAULT_JVM_OPTS \"-Dorg.gradle.internal.pseudo.terminal=$PSEUDO_TERMINAL\""
+    DEFAULT_JVM_OPTS="$DEFAULT_JVM_OPTS -Dorg.gradle.internal.pseudo.terminal=$PSEUDO_TERMINAL"
 fi
 
 # Use terminal background color if available
 if [ -n "$COLORFGBG" ]; then
-    DEFAULT_JVM_OPTS="$DEFAULT_JVM_OPTS \"-Dorg.gradle.internal.colorfgbg=$COLORFGBG\""
+    DEFAULT_JVM_OPTS="$DEFAULT_JVM_OPTS -Dorg.gradle.internal.colorfgbg=$COLORFGBG"
 fi
 
 # Use term width if available
 if [ -n "$COLUMNS" ]; then
-    DEFAULT_JVM_OPTS="$DEFAULT_JVM_OPTS \"-Dorg.gradle.internal.columns=$COLUMNS\""
+    DEFAULT_JVM_OPTS="$DEFAULT_JVM_OPTS -Dorg.gradle.internal.columns=$COLUMNS"
 fi
 
 # Warn if non-standard encoding is used
@@ -74,13 +74,13 @@ if [ -n "$LANG" ]; then
     case "$LANG" in
         *.UTF-8 | *.utf8 | *.UTF8) ;;
         *)
-            DEFAULT_JVM_OPTS="$DEFAULT_JVM_OPTS \"-Dfile.encoding=UTF-8\""
+            DEFAULT_JVM_OPTS="$DEFAULT_JVM_OPTS -Dfile.encoding=UTF-8"
             ;;
     esac
 fi
 
 # Use standard FS encoding for JVM
-DEFAULT_JVM_OPTS="$DEFAULT_JVM_OPTS \"-Dsun.jnu.encoding=UTF-8\""
+DEFAULT_JVM_OPTS="$DEFAULT_JVM_OPTS -Dsun.jnu.encoding=UTF-8"
 
 # Display version if requested
 if [ "$1" = "-v" ] || [ "$1" = "--version" ]; then
@@ -110,16 +110,7 @@ Please set the JAVA_HOME variable in your environment to match the
 location of your Java installation."
 fi
 
-# Increase default memory limits for 64-bit JVMs
-if [ -n "$JAVA_HOME" ] ; then
-    if [ -f "$JAVA_HOME/lib/amd64/libjvm.so" ] || [ -f "$JAVA_HOME/lib/i386/libjvm.so" ] || [ -f "$JAVA_HOME/lib/server/libjvm.so" ] ; then
-        DEFAULT_JVM_OPTS="$DEFAULT_JVM_OPTS \"-Xmx512m\""
-    fi
-fi
-
-# Escaping rules for JVM parameters
-# System properties with spaces need to be escaped
 CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar
 
-# Collect all arguments for the java command
+# Execute Gradle
 exec "$JAVACMD" $DEFAULT_JVM_OPTS -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"

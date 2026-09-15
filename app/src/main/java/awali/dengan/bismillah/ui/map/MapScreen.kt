@@ -12,6 +12,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -19,7 +20,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -133,7 +133,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
         // ===== Pin tetap di tengah layar =====
         CenterPin(modifier = Modifier.align(Alignment.Center))
 
-        // ===== Panel chip koordinat: PIN + GRB + GJK (atas-tengah, center) =====
+        // ===== Panel chip koordinat: PIN + GRB + GJK (atas-tengah, wrap-content) =====
         CoordinatePanel(
             pinCoord = target,
             grbCoord = grbCoord,
@@ -200,9 +200,10 @@ private fun CenterPin(modifier: Modifier = Modifier) {
 
 // =====================================================================
 // Panel chip koordinat (PIN + GRB + GJK)
-//  - Chip wrap-content (tidak melebar rapat kanan-kiri), center di panel
-//  - Tap PIN  = collapse jadi icon mata
-//  - Tap GRB/GJK = pin/kamera animasi menuju markernya
+//  - Panel wrap-content: lebar hanya selebar chip terpanjang, TIDAK full-width
+//  - Padding kecil di dalam panel agar koordinat tidak rapat ke tepi panel
+//  - Tap PIN      = collapse jadi icon mata
+//  - Tap GRB/GJK  = pin/kamera animasi menuju markernya
 // =====================================================================
 
 @Composable
@@ -220,7 +221,7 @@ private fun CoordinatePanel(
 
     if (expanded) {
         Surface(
-            modifier = modifier,
+            modifier = modifier, // wrap-content: mengikuti lebar isi
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
             tonalElevation = 2.dp,
@@ -228,8 +229,9 @@ private fun CoordinatePanel(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalAlignment = Alignment.CenterHorizontally // chip center, wrap-content
+                // Padding kecil: jarak antara tepi panel dan koordinat
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // Chip PIN — tap = collapse semua chip menjadi icon mata
                 ChipRow(
@@ -308,11 +310,11 @@ private fun ChipRow(
     onClick: () -> Unit
 ) {
     Row(
-        // wrap-content: tidak fillMaxWidth, tidak rapat kanan-kiri
+        // wrap-content: lebar hanya selebar isinya — TIDAK fillMaxWidth
         modifier = Modifier
             .clip(RoundedCornerShape(50))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 5.dp),
+            .padding(horizontal = 6.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         leading()

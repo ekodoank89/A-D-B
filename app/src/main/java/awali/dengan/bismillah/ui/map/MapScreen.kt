@@ -345,30 +345,17 @@ fun MapScreen(modifier: Modifier = Modifier) {
 // =====================================================================
 // State PERSISTEN — disimpan ke SharedPreferences di setiap perubahan,
 // dimuat ulang saat aplikasi dibuka (termasuk setelah force stop).
+// CATATAN FIX: LocalContext.current dibaca DI LUAR remember {}
+// (panggilan @Composable tidak boleh berada dalam lambda remember).
 // =====================================================================
 
 @Composable
 private fun rememberPersistentBoolean(key: String, default: Boolean): MutableState<Boolean> {
-    val prefs = remember {
-        LocalContext.current.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    }
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
     val state = remember { mutableStateOf(prefs.getBoolean(key, default)) }
     SideEffect {
-        if (prefs.getBoolean(key, default) != state.value) {
-            prefs.edit().putBoolean(key, state.value).apply()
-        }
-    }
-    return state
-}
-
-@Composable
-private fun rememberPersistentFloat(key: String, default: Float): MutableState<Float> {
-    val prefs = remember {
-        LocalContext.current.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    }
-    val state = remember { mutableStateOf(prefs.getFloat(key, default)) }
-    SideEffect {
-        prefs.edit().putFloat(key, state.value).apply()
+        prefs.edit().putBoolean(key, state.value).apply()
     }
     return state
 }
@@ -376,9 +363,8 @@ private fun rememberPersistentFloat(key: String, default: Float): MutableState<F
 // LatLng? — null disimpan dengan menghapus key (chip kosong / marker hilang)
 @Composable
 private fun rememberPersistentLatLng(key: String): MutableState<LatLng?> {
-    val prefs = remember {
-        LocalContext.current.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    }
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
     val state = remember {
         mutableStateOf<LatLng?>(
             if (prefs.contains("${key}_lat") && prefs.contains("${key}_lng")) {
@@ -409,9 +395,8 @@ private fun rememberPersistentLatLng(key: String): MutableState<LatLng?> {
 // Offset (posisi geser panel)
 @Composable
 private fun rememberPersistentOffset(key: String, default: Offset): MutableState<Offset> {
-    val prefs = remember {
-        LocalContext.current.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    }
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
     val state = remember {
         mutableStateOf(
             if (prefs.contains("${key}_x") && prefs.contains("${key}_y")) {

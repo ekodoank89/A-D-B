@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Scope aplikasi target untuk LSPosed -->
+    <string-array name="xposed_scope">
+        <item>module.aya.doank</item>
+    </string-array>
+</resources>

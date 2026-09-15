@@ -4,12 +4,17 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-// ===== Konfigurasi dari GitHub Secrets (env) =====
+// ===== Konfigurasi signing dari GitHub Secrets (env) =====
 val mapsApiKey: String = (System.getenv("MAPS_API_KEY") ?: "").trim()
-val keystoreFilePath: String = System.getenv("KEYSTORE_FILE") ?: "adb-release.jks"
-val keystorePassword: String? = System.getenv("KEYSTORE_PASSWORD")
-val keyAlias: String? = System.getenv("KEY_ALIAS")
-val keyPassword: String? = System.getenv("KEY_PASSWORD")
+
+// Helper: ambil secret dari environment, trim whitespace, kosong = null
+fun envSecret(name: String): String? =
+    System.getenv(name)?.trim()?.takeIf { it.isNotEmpty() }
+
+val keystoreFilePath: String = envSecret("KEYSTORE_FILE") ?: "adb-release.jks"
+val envStorePassword: String? = envSecret("KEYSTORE_PASSWORD")
+val envKeyAliasName: String? = envSecret("KEY_ALIAS")
+val envKeyPasswordValue: String? = envSecret("KEY_PASSWORD")
 
 android {
     namespace = "awali.dengan.bismillah"
@@ -25,12 +30,12 @@ android {
     }
 
     signingConfigs {
-        if (keystorePassword != null && keyAlias != null && keyPassword != null) {
+        if (envStorePassword != null && envKeyAliasName != null && envKeyPasswordValue != null) {
             create("release") {
                 storeFile = file(keystoreFilePath)
-                storePassword = keystorePassword
-                this.keyAlias = keyAlias
-                this.keyPassword = keyPassword
+                storePassword = envStorePassword
+                keyAlias = envKeyAliasName
+                keyPassword = envKeyPasswordValue
             }
         }
     }
@@ -78,5 +83,4 @@ dependencies {
     // Google Maps Compose SDK
     implementation("com.google.maps.android:maps-compose:6.1.2")
     implementation("com.google.android.gms:play-services-maps:19.0.0")
-
 }

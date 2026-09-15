@@ -292,7 +292,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                     .padding(bottom = 16.dp)
             )
 
-            // ===== Panel utilitas: Autofocus / Terang-Gelap / Lock / Zoom (moveable + lock) =====
+            // ===== Panel utilitas icon-only (moveable + lock) =====
             UtilityPanel(
                 darkMode = darkMode,
                 onAutoFocus = { autoFocus() },
@@ -620,8 +620,8 @@ private fun PlayLabel(
 }
 
 // =====================================================================
-// Panel utilitas — vertikal:
-//   [Autofocus] -> [Terang/Gelap] -> [lock/unlock] -> [Zoom In] -> [Zoom Out]
+// Panel utilitas — ICON-ONLY (tanpa label), vertikal:
+//   [Autofocus] -> [Terang/Gelap] -> [lock/unlock] -> [+] -> [-]
 // Movable (drag) dengan lock independen dari panel play.
 // =====================================================================
 
@@ -663,23 +663,23 @@ private fun UtilityPanel(
         )
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 1. Autofocus
+            // 1. Autofocus (icon saja)
             UtilityButton(
                 iconRes = R.drawable.ic_my_location,
-                label = "Autofocus",
+                contentDesc = "Autofocus",
                 active = false,
                 onClick = onAutoFocus
             )
 
             Spacer(Modifier.height(8.dp))
 
-            // 2. Terang/Gelap
+            // 2. Terang/Gelap (icon saja)
             UtilityButton(
                 iconRes = R.drawable.ic_brightness,
-                label = "Terang/Gelap",
+                contentDesc = "Terang/Gelap",
                 active = darkMode,
                 onClick = onToggleDark
             )
@@ -691,20 +691,20 @@ private fun UtilityPanel(
 
             Spacer(Modifier.height(8.dp))
 
-            // 4. Zoom In (tap = langsung zoom maksimal)
+            // 4. Zoom In (icon +, tap = langsung zoom maksimal)
             UtilityButton(
-                iconRes = R.drawable.ic_zoom_in,
-                label = "Zoom In",
+                iconRes = R.drawable.ic_plus,
+                contentDesc = "Zoom In",
                 active = false,
                 onClick = onZoomIn
             )
 
             Spacer(Modifier.height(8.dp))
 
-            // 5. Zoom Out (mundur 2 level)
+            // 5. Zoom Out (icon -, mundur 2 level)
             UtilityButton(
-                iconRes = R.drawable.ic_zoom_out,
-                label = "Zoom Out",
+                iconRes = R.drawable.ic_minus,
+                contentDesc = "Zoom Out",
                 active = false,
                 onClick = onZoomOut
             )
@@ -712,42 +712,33 @@ private fun UtilityPanel(
     }
 }
 
+// Tombol bulat icon-only (tanpa label)
 @Composable
 private fun UtilityButton(
     iconRes: Int,
-    label: String,
+    contentDesc: String,
     active: Boolean,
     onClick: () -> Unit
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Surface(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .clickable(onClick = onClick),
-            shape = CircleShape,
-            color = if (active) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.primaryContainer,
-            shadowElevation = 2.dp
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    painter = painterResource(iconRes),
-                    contentDescription = label,
-                    tint = if (active) MaterialTheme.colorScheme.onPrimary
-                    else MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
+    Surface(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        shape = CircleShape,
+        color = if (active) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.primaryContainer,
+        shadowElevation = 2.dp
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = contentDesc,
+                tint = if (active) MaterialTheme.colorScheme.onPrimary
+                else MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(20.dp)
+            )
         }
-        Spacer(Modifier.height(3.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = if (active) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.onSurface
-        )
     }
 }
 

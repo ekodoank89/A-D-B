@@ -1,7 +1,8 @@
 <resources>
-    <!-- Scope LSPosed: HANYA aplikasi rekomendasi yang tampil di ceklis -->
+    <!-- Scope LSPosed: sama seperti Aurora (Gojek + Grab + Sistem Android) -->
     <string-array name="xposed_scope">
         <item>com.gojek.partner</item>
         <item>com.grabtaxi.driver2</item>
+        <item>android</item>
     </string-array>
 </resources>

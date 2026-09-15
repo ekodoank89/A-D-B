@@ -52,7 +52,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -94,6 +96,9 @@ private val PIN_SIZE = 40.dp
 
 // ===== Penyimpanan state persisten (tahan force stop) =====
 private const val PREFS_NAME = "adb_persistent_state"
+private const val KEY_CAM_LAT = "cam_lat"
+private const val KEY_CAM_LNG = "cam_lng"
+private const val KEY_CAM_ZOOM = "cam_zoom"
 
 // ===== Warna =====
 private val PIN_GREEN = Color(0xFF2E7D32) // pin tengah: HIJAU
@@ -129,6 +134,9 @@ fun MapScreen(modifier: Modifier = Modifier) {
     val locationGranted = rememberAppPermissions()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
 
     // ===== Mode gelap — PERSISTEN =====
     var darkMode by rememberPersistentBoolean("dark_mode", false)
@@ -142,8 +150,20 @@ fun MapScreen(modifier: Modifier = Modifier) {
         }
     }
 
+    // ===== Kamera: RESTORE posisi terakhir (tahan force stop) =====
     val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(DEFAULT_CENTER, DEFAULT_ZOOM)
+        position =
+            if (prefs.contains(KEY_CAM_LAT) && prefs.contains(KEY_CAM_LNG)) {
+                CameraPosition.fromLatLngZoom(
+                    LatLng(
+                        Double.fromBits(prefs.getLong(KEY_CAM_LAT, 0L)),
+                        Double.fromBits(prefs.getLong(KEY_CAM_LNG, 0L))
+                    ),
+                    prefs.getFloat(KEY_CAM_ZOOM, DEFAULT_ZOOM)
+                )
+            } else {
+                CameraPosition.fromLatLngZoom(DEFAULT_CENTER, DEFAULT_ZOOM)
+            }
     }
 
     // Target kamera = titik tengah layar (posisi pin). Live mengikuti pergeseran map.
@@ -177,6 +197,38 @@ fun MapScreen(modifier: Modifier = Modifier) {
     // ===== Lock & posisi geser panel utilitas — PERSISTEN =====
     var utilLocked by rememberPersistentBoolean("util_locked", false)
     var utilDragOffset by rememberPersistentOffset("util_drag", Offset.Zero)
+
+    // ===== Simpan posisi kamera tiap berubah (throttle 1 detik) =====
+    LaunchedEffect(cameraPositionState) {
+        var lastSave = 0L
+        snapshotFlow { cameraPositionState.position }.collect { pos ->
+            val now = System.currentTimeMillis()
+            if (now - lastSave >= 1000L) {
+                lastSave = now
+                prefs.edit()
+                    .putLong(KEY_CAM_LAT, pos.target.latitude.toRawBits())
+                    .putLong(KEY_CAM_LNG, pos.target.longitude.toRawBits())
+                    .putFloat(KEY_CAM_ZOOM, pos.zoom)
+                    .apply()
+            }
+        }
+    }
+
+    // ===== Simpan final saat app ke background (tipikal momen sebelum force stop) =====
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                val pos = cameraPositionState.position
+                prefs.edit()
+                    .putLong(KEY_CAM_LAT, pos.target.latitude.toRawBits())
+                    .putLong(KEY_CAM_LNG, pos.target.longitude.toRawBits())
+                    .putFloat(KEY_CAM_ZOOM, pos.zoom)
+                    .apply()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // Animasi kamera (pin tengah) menuju koordinat
     fun flyTo(coord: LatLng) {
@@ -345,8 +397,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
 // =====================================================================
 // State PERSISTEN — disimpan ke SharedPreferences di setiap perubahan,
 // dimuat ulang saat aplikasi dibuka (termasuk setelah force stop).
-// CATATAN FIX: LocalContext.current dibaca DI LUAR remember {}
-// (panggilan @Composable tidak boleh berada dalam lambda remember).
+// LocalContext.current dibaca DI LUAR remember {} (aturan Compose).
 // =====================================================================
 
 @Composable
@@ -609,7 +660,10 @@ private fun ChipRow(
 }
 
 // =====================================================================
-// Panel tombol GRB/GJK — lock & posisi geser di-raise ke parent (persisten)
+// Panel tombol GRB/GJK — FIX DRAG:
+// dragOffset kini parameter biasa; pointerInput(locked) LAMA membaca nilai
+// basi sehingga panel tidak bisa digeser. Solusi: rememberUpdatedState +
+// pointerInput(Unit) + cek locked DI DALAM handler (nilai selalu terkini).
 // =====================================================================
 
 @Composable
@@ -624,21 +678,20 @@ private fun PlayControlPanel(
     onDragOffsetChange: (Offset) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val currentDragOffset by rememberUpdatedState(dragOffset)
+    val currentLocked by rememberUpdatedState(locked)
+
     Surface(
         modifier = modifier
-            .offset { IntOffset(dragOffset.x.roundToInt(), dragOffset.y.roundToInt()) }
-            .then(
-                if (!locked) {
-                    Modifier.pointerInput(locked) {
-                        detectDragGestures { change, dragAmount ->
-                            change.consume()
-                            onDragOffsetChange(dragOffset + dragAmount)
-                        }
+            .offset { IntOffset(currentDragOffset.x.roundToInt(), currentDragOffset.y.roundToInt()) }
+            .pointerInput(Unit) {
+                detectDragGestures { change, dragAmount ->
+                    change.consume()
+                    if (!currentLocked) {
+                        onDragOffsetChange(currentDragOffset + dragAmount)
                     }
-                } else {
-                    Modifier
                 }
-            ),
+            },
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
         tonalElevation = 3.dp,
@@ -729,7 +782,7 @@ private fun PlayLabel(
 }
 
 // =====================================================================
-// Panel utilitas — lock & posisi geser di-raise ke parent (persisten)
+// Panel utilitas — FIX DRAG (sama seperti PlayControlPanel)
 // =====================================================================
 
 @Composable
@@ -745,21 +798,20 @@ private fun UtilityPanel(
     onDragOffsetChange: (Offset) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val currentDragOffset by rememberUpdatedState(dragOffset)
+    val currentLocked by rememberUpdatedState(locked)
+
     Surface(
         modifier = modifier
-            .offset { IntOffset(dragOffset.x.roundToInt(), dragOffset.y.roundToInt()) }
-            .then(
-                if (!locked) {
-                    Modifier.pointerInput(locked) {
-                        detectDragGestures { change, dragAmount ->
-                            change.consume()
-                            onDragOffsetChange(dragOffset + dragAmount)
-                        }
+            .offset { IntOffset(currentDragOffset.x.roundToInt(), currentDragOffset.y.roundToInt()) }
+            .pointerInput(Unit) {
+                detectDragGestures { change, dragAmount ->
+                    change.consume()
+                    if (!currentLocked) {
+                        onDragOffsetChange(currentDragOffset + dragAmount)
                     }
-                } else {
-                    Modifier
                 }
-            ),
+            },
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
         tonalElevation = 3.dp,

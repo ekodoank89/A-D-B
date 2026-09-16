@@ -24,8 +24,8 @@ android {
         applicationId = "awali.dengan.bismillah"
         minSdk = 30    // Android 11
         targetSdk = 35 // Android 15
-        versionCode = 7      // bump bersih-bersih hook
-        versionName = "2.0.0"
+        versionCode = 9      // dari 8
+        versionName = "2.1.1"
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
     }
 

@@ -148,7 +148,7 @@ private val DARK_MAP_STYLE = """
 // =====================================================================
 // Model & penyimpanan Favorite — list TERPISAH per tab (GRB/GJK)
 // Encoding: "id|nama|lat|lng", antar item dipisah ";"
-// Nama disanitasi (| dan ; diganti) agar tidak merusak encoding.
+// Juga menyimpan: tab terakhir + section (Dari Pin/Manual) terakhir.
 // =====================================================================
 
 private data class FavItem(
@@ -165,6 +165,7 @@ private object FavStore {
     private const val KEY_GRB = "fav_list_grb"
     private const val KEY_GJK = "fav_list_gjk"
     private const val KEY_LAST_TAB = "fav_last_tab"
+    private const val KEY_LAST_SECTION = "fav_last_section"
 
     private fun keyOf(tab: FavTab) = if (tab == FavTab.GRB) KEY_GRB else KEY_GJK
 
@@ -197,6 +198,14 @@ private object FavStore {
 
     fun saveLastTab(prefs: SharedPreferences, tab: FavTab) {
         prefs.edit().putString(KEY_LAST_TAB, if (tab == FavTab.GJK) "GJK" else "GRB").apply()
+    }
+
+    // Section (form) terakhir yang di-tap: "PIN" atau "MANUAL" — tahan force stop
+    fun lastSection(prefs: SharedPreferences): String =
+        prefs.getString(KEY_LAST_SECTION, "PIN") ?: "PIN"
+
+    fun saveLastSection(prefs: SharedPreferences, section: String) {
+        prefs.edit().putString(KEY_LAST_SECTION, section).apply()
     }
 }
 
@@ -434,7 +443,6 @@ fun MapScreen(modifier: Modifier = Modifier) {
         }
         Toast.makeText(context, "Favorite dihapus", Toast.LENGTH_SHORT).show()
     }
-
 
         MaterialTheme(colorScheme = colorScheme) {
         Box(modifier = modifier.fillMaxSize()) {
@@ -866,7 +874,7 @@ private fun PanelDivider() {
 }
 
 // =====================================================================
-// Panel tombol — favorite kini MEMBUKA DIALOG (bukan toggle marker).
+// Panel tombol — favorite MEMBUKA DIALOG (bukan toggle marker).
 // Urutan: [▶GRB] [GRB] [sep] [GJK] [▶GJK] [sep] [lock] [sep] [⭐] [sep] [Jitter]
 // ⭐ = icon BINTANG EMAS; latar emas lembut jika ada favorite tersimpan.
 // =====================================================================
@@ -1185,9 +1193,14 @@ private fun LockButton(locked: Boolean, onToggle: () -> Unit) {
     }
 }
 
+
 // =====================================================================
 // Dialog Favorite:
 //  - 2 tab (GRB/GJK), tab terakhir di-tap DISIMPAN -> dibuka lagi nanti
+//  - Accordion section (bisa di-tap): "Dari Pin" ⇄ "Manual"
+//      * Tap label Dari Pin  -> form pin tampil, form manual HIDE
+//      * Tap label Manual    -> form manual tampil, form pin HIDE
+//      * Section terakhir DI-TAP DISIMPAN -> tahan force stop
 //  - Form "Dari Pin": nama manual, Latitude & Longitude OTOMATIS
 //    terisi dari pin tengah (read-only) -> Tombol Simpan
 //  - Form "Manual": nama + latitude + longitude manual -> Tombol Simpan
@@ -1212,6 +1225,9 @@ private fun FavoriteDialog(
 ) {
     val context = LocalContext.current
     var tab by remember { mutableStateOf(initialTab) }
+
+    // Section (form) aktif — dibuka sesuai yang terakhir di-tap (persisten)
+    var section by remember { mutableStateOf(FavStore.lastSection(prefs)) }
 
     // Form "Dari Pin" — lat/lng otomatis dari pin tengah (read-only)
     var pinName by remember { mutableStateOf("") }
@@ -1325,105 +1341,118 @@ private fun FavoriteDialog(
                         modifier = Modifier.align(Alignment.End)
                     ) { Text("Update") }
                 } else {
-                    // ================= Dari Pin =================
-                    Text(
-                        text = "Dari Pin",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(
-                        value = pinName,
-                        onValueChange = { pinName = it },
-                        label = { Text("Nama Favorite") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    // Latitude OTOMATIS dari pin tengah (read-only)
-                    OutlinedTextField(
-                        value = String.format(Locale.US, "%.6f", currentPin.latitude),
-                        onValueChange = {},
-                        label = { Text("Latitude") },
-                        readOnly = true,
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    // Longitude OTOMATIS dari pin tengah (read-only)
-                    OutlinedTextField(
-                        value = String.format(Locale.US, "%.6f", currentPin.longitude),
-                        onValueChange = {},
-                        label = { Text("Longitude") },
-                        readOnly = true,
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    TextButton(
-                        onClick = {
-                            onAdd(tab, pinName, currentPin)
-                            pinName = ""
-                        },
-                        enabled = pinName.isNotBlank(),
-                        modifier = Modifier.align(Alignment.End)
-                    ) { Text("Simpan") }
+                    // ================= Accordion: Dari Pin / Manual =================
 
-                    HorizontalDivider()
-                    Spacer(Modifier.height(8.dp))
-
-                    // ================= Manual =================
-                    Text(
-                        text = "Manual",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(
-                        value = manualName,
-                        onValueChange = { manualName = it },
-                        label = { Text("Nama Favorite") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(
-                        value = manualLat,
-                        onValueChange = { manualLat = it },
-                        label = { Text("Latitude") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(
-                        value = manualLng,
-                        onValueChange = { manualLng = it },
-                        label = { Text("Longitude") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    TextButton(
+                    // --- Header "Dari Pin" (tap = buka form pin, tutup manual) ---
+                    SectionHeader(
+                        title = "Dari Pin",
+                        active = section == "PIN",
                         onClick = {
-                            val lat = manualLat.trim().toDoubleOrNull()
-                            val lng = manualLng.trim().toDoubleOrNull()
-                            if (manualName.isBlank() || lat == null || lng == null ||
-                                lat < -90.0 || lat > 90.0 || lng < -180.0 || lng > 180.0
-                            ) {
-                                Toast.makeText(
-                                    context,
-                                    "Data tidak valid. Periksa nama & koordinat.",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            } else {
-                                onAdd(tab, manualName, LatLng(lat, lng))
-                                manualName = ""
-                                manualLat = ""
-                                manualLng = ""
-                            }
-                        },
-                        enabled = manualName.isNotBlank() &&
-                            manualLat.isNotBlank() && manualLng.isNotBlank(),
-                        modifier = Modifier.align(Alignment.End)
-                    ) { Text("Simpan") }
+                            section = "PIN"
+                            FavStore.saveLastSection(prefs, "PIN")
+                        }
+                    )
+
+                    if (section == "PIN") {
+                        Spacer(Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = pinName,
+                            onValueChange = { pinName = it },
+                            label = { Text("Nama Favorite") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        // Latitude OTOMATIS dari pin tengah (read-only)
+                        OutlinedTextField(
+                            value = String.format(Locale.US, "%.6f", currentPin.latitude),
+                            onValueChange = {},
+                            label = { Text("Latitude") },
+                            readOnly = true,
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        // Longitude OTOMATIS dari pin tengah (read-only)
+                        OutlinedTextField(
+                            value = String.format(Locale.US, "%.6f", currentPin.longitude),
+                            onValueChange = {},
+                            label = { Text("Longitude") },
+                            readOnly = true,
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        TextButton(
+                            onClick = {
+                                onAdd(tab, pinName, currentPin)
+                                pinName = ""
+                            },
+                            enabled = pinName.isNotBlank(),
+                            modifier = Modifier.align(Alignment.End)
+                        ) { Text("Simpan") }
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+
+                    // --- Header "Manual" (tap = buka form manual, tutup pin) ---
+                    SectionHeader(
+                        title = "Manual",
+                        active = section == "MANUAL",
+                        onClick = {
+                            section = "MANUAL"
+                            FavStore.saveLastSection(prefs, "MANUAL")
+                        }
+                    )
+
+                    if (section == "MANUAL") {
+                        Spacer(Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = manualName,
+                            onValueChange = { manualName = it },
+                            label = { Text("Nama Favorite") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = manualLat,
+                            onValueChange = { manualLat = it },
+                            label = { Text("Latitude") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = manualLng,
+                            onValueChange = { manualLng = it },
+                            label = { Text("Longitude") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        TextButton(
+                            onClick = {
+                                val lat = manualLat.trim().toDoubleOrNull()
+                                val lng = manualLng.trim().toDoubleOrNull()
+                                if (manualName.isBlank() || lat == null || lng == null ||
+                                    lat < -90.0 || lat > 90.0 || lng < -180.0 || lng > 180.0
+                                ) {
+                                    Toast.makeText(
+                                        context,
+                                        "Data tidak valid. Periksa nama & koordinat.",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                } else {
+                                    onAdd(tab, manualName, LatLng(lat, lng))
+                                    manualName = ""
+                                    manualLat = ""
+                                    manualLng = ""
+                                }
+                            },
+                            enabled = manualName.isNotBlank() &&
+                                manualLat.isNotBlank() && manualLng.isNotBlank(),
+                            modifier = Modifier.align(Alignment.End)
+                        ) { Text("Simpan") }
+                    }
                 }
 
                 HorizontalDivider()
@@ -1490,6 +1519,40 @@ private fun FavoriteDialog(
             dismissButton = {
                 TextButton(onClick = { deleteTarget = null }) { Text("Batal") }
             }
+        )
+    }
+}
+
+// Header section yang bisa di-tap (Dari Pin / Manual)
+// Aktif = warna primary + tanda minus; non-aktif = redup + tanda plus
+@Composable
+private fun SectionHeader(
+    title: String,
+    active: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = if (active) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = if (active) "−" else "+",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = if (active) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }

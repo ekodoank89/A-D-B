@@ -88,6 +88,7 @@ import com.google.maps.android.compose.rememberMarkerState
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlin.random.Random
 
 private val DEFAULT_CENTER = LatLng(-6.2088, 106.8456) // Monas, Jakarta
 private const val DEFAULT_ZOOM = 17f
@@ -101,9 +102,13 @@ private const val KEY_CAM_LNG = "cam_lng"
 private const val KEY_CAM_ZOOM = "cam_zoom"
 
 // ===== Warna =====
-private val PIN_GREEN = Color(0xFF2E7D32) // pin tengah: HIJAU
-private val GRB_RED = Color(0xFFE53935)   // marker GRB: MERAH
-private val GJK_BLUE = Color(0xFF1E88E5)  // marker GJK: BIRU
+private val PIN_GREEN = Color(0xFF2E7D32)  // pin tengah: HIJAU
+private val GRB_RED = Color(0xFFE53935)    // marker GRB: MERAH
+private val GJK_BLUE = Color(0xFF1E88E5)   // marker GJK: BIRU
+private val FAV_GOLD = Color(0xFFFFB300)   // marker Favorite: EMAS
+
+// ===== Jitter: offset acak maksimal (derajat) ~= +-5 meter =====
+private const val JITTER_MAX_DEG = 0.00005
 
 // ===== Style gelap untuk Google Map =====
 private val DARK_MAP_STYLE = """
@@ -178,14 +183,25 @@ fun MapScreen(modifier: Modifier = Modifier) {
         tint = GJK_BLUE,
         fallbackHue = BitmapDescriptorFactory.HUE_BLUE
     )
+    val favMarkerIcon = rememberPinMarkerIcon(
+        tint = FAV_GOLD,
+        fallbackHue = BitmapDescriptorFactory.HUE_YELLOW
+    )
 
     // ===== Status play/stop — PERSISTEN =====
     var grbPlaying by rememberPersistentBoolean("grb_playing", false)
-    var gjkPlaying by rememberPersistentBoolean("gjk_playing", false)
+    var gjkPlaying by remember { mutableStateOf(false) }
+    gjkPlaying = rememberPersistentBoolean("gjk_playing", false).value
 
     // ===== Koordinat TERKUNCI saat PLAY — PERSISTEN (marker ikut muncul lagi) =====
     var grbCoord by rememberPersistentLatLng("grb_coord")
     var gjkCoord by rememberPersistentLatLng("gjk_coord")
+
+    // ===== Favorite — PERSISTEN (marker emas di koordinat pin tengah) =====
+    var favCoord by rememberPersistentLatLng("fav_coord")
+
+    // ===== Jitter — PERSISTEN (offset acak kecil saat capture koordinat) =====
+    var jitterEnabled by rememberPersistentBoolean("jitter_enabled", false)
 
     // ===== Chip expanded/collapsed — PERSISTEN =====
     var chipsExpanded by rememberPersistentBoolean("chips_expanded", true)
@@ -199,7 +215,6 @@ fun MapScreen(modifier: Modifier = Modifier) {
     var utilDragOffset by rememberPersistentOffset("util_drag", Offset.Zero)
 
     // ===== First launch: pin otomatis ke titik biru (HANYA SEKALI sepanjang umur app) =====
-    // Flag persisten: setelah sukses sekali, tidak pernah auto-move lagi.
     var firstLaunchDone by rememberPersistentBoolean("first_launch_done", false)
 
     // ===== Simpan posisi kamera tiap berubah (throttle 1 detik) =====
@@ -218,7 +233,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    // ===== Simpan final saat app ke background (tipikal momen sebelum force stop) =====
+    // ===== Simpan final saat app ke background =====
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) {
@@ -234,9 +249,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // ===== FIRST LAUNCH: begitu izin lokasi granted, pin animasi ke titik biru =====
-    // Hanya dijalankan jika flag belum pernah diset; sukses -> flag disimpan permanen.
-    // Jika lokasi belum tersedia, dicoba lagi di pembukaan aplikasi berikutnya.
+    // ===== FIRST LAUNCH: pin animasi ke titik biru (sekali saja) =====
     LaunchedEffect(locationGranted) {
         if (locationGranted && !firstLaunchDone) {
             val ok = runCatching {
@@ -251,8 +264,8 @@ fun MapScreen(modifier: Modifier = Modifier) {
                                 CameraPosition(
                                     LatLng(loc.latitude, loc.longitude),
                                     DEFAULT_ZOOM,
-                                    0f, // tilt normal
-                                    0f  // bearing normal (utara di atas)
+                                    0f,
+                                    0f
                                 )
                             )
                         )
@@ -263,7 +276,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                 }
             }.getOrDefault(false)
             if (ok) {
-                firstLaunchDone = true // tandai selesai — tidak akan auto-move lagi
+                firstLaunchDone = true
             }
         }
     }
@@ -280,10 +293,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    // ===== Autofocus + KOMPAS =====
-    // Satu tap: animasi ke lokasi terakhir perangkat SEKALIGUS menormalkan map
-    // yang di-rotate (bearing -> 0, tilt -> 0) — gabungan fungsi tombol lokasi
-    // dan tombol kompas bawaan Google.
+    // ===== Autofocus + KOMPAS: ke lokasi perangkat + normalisasi rotasi map =====
     fun autoFocus() {
         if (!locationGranted) {
             Toast.makeText(context, "Izin lokasi belum diberikan", Toast.LENGTH_SHORT).show()
@@ -300,9 +310,9 @@ fun MapScreen(modifier: Modifier = Modifier) {
                         CameraUpdateFactory.newCameraPosition(
                             CameraPosition(
                                 LatLng(loc.latitude, loc.longitude),
-                                cameraPositionState.position.zoom, // zoom dipertahankan
-                                0f, // tilt dinormalkan
-                                0f  // bearing dinormalkan (utara di atas)
+                                cameraPositionState.position.zoom,
+                                0f,
+                                0f
                             )
                         )
                     )
@@ -335,16 +345,15 @@ fun MapScreen(modifier: Modifier = Modifier) {
     MaterialTheme(colorScheme = colorScheme) {
         Box(modifier = modifier.fillMaxSize()) {
 
-            // ===== Google Map full width + marker GRB/GJK =====
+            // ===== Google Map full width + marker GRB/GJK/Favorite =====
             GoogleMap(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
-                // SEMUA UI bawaan Google dimatikan — digantikan panel custom kita
                 uiSettings = remember {
                     MapUiSettings(
                         zoomControlsEnabled = false,
-                        compassEnabled = false,         // hilangkan KOMPAS bawaan Google
-                        myLocationButtonEnabled = false // hilangkan tombol LOKASI bawaan Google
+                        compassEnabled = false,
+                        myLocationButtonEnabled = false
                     )
                 },
                 properties = remember(locationGranted, darkMode) {
@@ -354,7 +363,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                     )
                 }
             ) {
-                // Marker GRB — pin MERAH, muncul saat PLAY (termasuk hasil restore), hilang saat STOP
+                // Marker GRB — pin MERAH, muncul saat PLAY, hilang saat STOP
                 grbCoord?.let { coord ->
                     Marker(
                         state = rememberMarkerState(key = "grb_$coord", position = coord),
@@ -363,7 +372,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                         anchor = Offset(0.5f, 1.0f)
                     )
                 }
-                // Marker GJK — pin BIRU, muncul saat PLAY (termasuk hasil restore), hilang saat STOP
+                // Marker GJK — pin BIRU, muncul saat PLAY, hilang saat STOP
                 gjkCoord?.let { coord ->
                     Marker(
                         state = rememberMarkerState(key = "gjk_$coord", position = coord),
@@ -372,12 +381,21 @@ fun MapScreen(modifier: Modifier = Modifier) {
                         anchor = Offset(0.5f, 1.0f)
                     )
                 }
+                // Marker Favorite — pin EMAS, ada selama favorite tersimpan
+                favCoord?.let { coord ->
+                    Marker(
+                        state = rememberMarkerState(key = "fav_$coord", position = coord),
+                        title = "Favorite",
+                        icon = favMarkerIcon,
+                        anchor = Offset(0.5f, 1.0f)
+                    )
+                }
             }
 
             // ===== Pin HIJAU tetap di tengah layar =====
             CenterPin(modifier = Modifier.align(Alignment.Center))
 
-            // ===== Panel chip koordinat: PIN + GRB + GJK (atas-tengah, wrap-content) =====
+            // ===== Panel chip koordinat: PIN + GRB + GJK =====
             CoordinatePanel(
                 pinCoord = target,
                 grbCoord = grbCoord,
@@ -394,13 +412,15 @@ fun MapScreen(modifier: Modifier = Modifier) {
                     .padding(top = 4.dp)
             )
 
-            // ===== Panel tombol GRB/GJK (moveable + lock, posisi persisten) =====
+            // ===== Panel tombol GRB/GJK/Lock/Favorite/Jitter (moveable + lock) =====
             PlayControlPanel(
                 grbPlaying = grbPlaying,
                 gjkPlaying = gjkPlaying,
                 onGrbToggle = {
                     if (!grbPlaying) {
-                        grbCoord = cameraPositionState.position.target
+                        val base = cameraPositionState.position.target
+                        // Jitter ON -> koordinat capture diberi offset acak kecil
+                        grbCoord = if (jitterEnabled) applyJitter(base) else base
                         grbPlaying = true
                     } else {
                         grbCoord = null
@@ -409,13 +429,27 @@ fun MapScreen(modifier: Modifier = Modifier) {
                 },
                 onGjkToggle = {
                     if (!gjkPlaying) {
-                        gjkCoord = cameraPositionState.position.target
+                        val base = cameraPositionState.position.target
+                        gjkCoord = if (jitterEnabled) applyJitter(base) else base
                         gjkPlaying = true
                     } else {
                         gjkCoord = null
                         gjkPlaying = false
                     }
                 },
+                favActive = favCoord != null,
+                onFavToggle = {
+                    if (favCoord == null) {
+                        // Simpan koordinat pin tengah sebagai favorite
+                        favCoord = cameraPositionState.position.target
+                        Toast.makeText(context, "Favorite disimpan", Toast.LENGTH_SHORT).show()
+                    } else {
+                        favCoord = null
+                        Toast.makeText(context, "Favorite dihapus", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                jitterEnabled = jitterEnabled,
+                onJitterToggle = { jitterEnabled = !jitterEnabled },
                 locked = playLocked,
                 onLockedChange = { playLocked = it },
                 dragOffset = playDragOffset,
@@ -426,8 +460,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                     .padding(bottom = 16.dp)
             )
 
-            // ===== Panel utilitas icon-only (moveable + lock, posisi persisten) =====
-            // Autofocus kini = autofocus + kompas (normalisasi rotasi map)
+            // ===== Panel utilitas icon-only (moveable + lock) =====
             UtilityPanel(
                 darkMode = darkMode,
                 onAutoFocus = { autoFocus() },
@@ -448,9 +481,17 @@ fun MapScreen(modifier: Modifier = Modifier) {
 }
 
 // =====================================================================
-// State PERSISTEN — disimpan ke SharedPreferences di setiap perubahan,
-// dimuat ulang saat aplikasi dibuka (termasuk setelah force stop).
-// LocalContext.current dibaca DI LUAR remember {} (aturan Compose).
+// Jitter: offset acak kecil pada koordinat (lat & lng masing-masing
+// digeser acak dalam rentang +-JITTER_MAX_DEG ~= +-5 meter)
+// =====================================================================
+
+private fun applyJitter(coord: LatLng): LatLng = LatLng(
+    coord.latitude + Random.nextDouble(-JITTER_MAX_DEG, JITTER_MAX_DEG),
+    coord.longitude + Random.nextDouble(-JITTER_MAX_DEG, JITTER_MAX_DEG)
+)
+
+// =====================================================================
+// State PERSISTEN — disimpan ke SharedPreferences di setiap perubahan
 // =====================================================================
 
 @Composable
@@ -464,7 +505,7 @@ private fun rememberPersistentBoolean(key: String, default: Boolean): MutableSta
     return state
 }
 
-// LatLng? — null disimpan dengan menghapus key (chip kosong / marker hilang)
+// LatLng? — null disimpan dengan menghapus key (marker hilang / chip kosong)
 @Composable
 private fun rememberPersistentLatLng(key: String): MutableState<LatLng?> {
     val context = LocalContext.current
@@ -564,7 +605,7 @@ private fun CenterPin(modifier: Modifier = Modifier) {
 }
 
 // =====================================================================
-// Panel chip koordinat (PIN + GRB + GJK) — expanded state persisten
+// Panel chip koordinat (PIN + GRB + GJK)
 // =====================================================================
 
 @Composable
@@ -713,8 +754,9 @@ private fun ChipRow(
 }
 
 // =====================================================================
-// Panel tombol GRB/GJK — movable + lock (rememberUpdatedState agar
-// closure drag selalu membaca nilai terkini)
+// Panel tombol — urutan vertikal:
+//   [▶ GRB] [GRB] [lock] [GJK] [▶ GJK] — separator — [⭐ Favorite] [🎲 Jitter]
+// Movable (drag) + lock, semua state persisten.
 // =====================================================================
 
 @Composable
@@ -723,6 +765,10 @@ private fun PlayControlPanel(
     gjkPlaying: Boolean,
     onGrbToggle: () -> Unit,
     onGjkToggle: () -> Unit,
+    favActive: Boolean,
+    onFavToggle: () -> Unit,
+    jitterEnabled: Boolean,
+    onJitterToggle: () -> Unit,
     locked: Boolean,
     onLockedChange: (Boolean) -> Unit,
     dragOffset: Offset,
@@ -757,6 +803,7 @@ private fun PlayControlPanel(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // 1. Tombol play/stop GRB
             PlayCircleButton(
                 playing = grbPlaying,
                 activeColor = GRB_RED,
@@ -766,23 +813,57 @@ private fun PlayControlPanel(
 
             Spacer(Modifier.height(5.dp))
 
+            // 2. Label GRB
             PlayLabel(text = "GRB", playing = grbPlaying, activeColor = GRB_RED)
 
             Spacer(Modifier.height(8.dp))
 
+            // 3. Lock/unlock movable
             LockButton(locked = locked, onToggle = { onLockedChange(!locked) })
 
             Spacer(Modifier.height(8.dp))
 
+            // 4. Label GJK
             PlayLabel(text = "GJK", playing = gjkPlaying, activeColor = GJK_BLUE)
 
             Spacer(Modifier.height(5.dp))
 
+            // 5. Tombol play/stop GJK
             PlayCircleButton(
                 playing = gjkPlaying,
                 activeColor = GJK_BLUE,
                 contentDesc = if (gjkPlaying) "Stop GJK" else "Play GJK",
                 onClick = onGjkToggle
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // 6. Separator (icon pembatas)
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 8.dp),
+                thickness = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // 7. Tombol Favorite (emas saat aktif)
+            UtilityButton(
+                iconRes = R.drawable.ic_star,
+                contentDesc = if (favActive) "Hapus favorite" else "Simpan favorite",
+                active = favActive,
+                activeColor = FAV_GOLD,
+                onClick = onFavToggle
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // 8. Tombol Jitter (toggle)
+            UtilityButton(
+                iconRes = R.drawable.ic_jitter,
+                contentDesc = if (jitterEnabled) "Jitter aktif" else "Jitter nonaktif",
+                active = jitterEnabled,
+                onClick = onJitterToggle
             )
         }
     }
@@ -833,8 +914,7 @@ private fun PlayLabel(
 }
 
 // =====================================================================
-// Panel utilitas — ICON-ONLY, vertikal:
-//   [Autofocus+Kompas] -> [Terang/Gelap] -> [lock] -> [+] -> [-]
+// Panel utilitas — ICON-ONLY, vertikal (moveable + lock)
 // =====================================================================
 
 @Composable
@@ -930,7 +1010,8 @@ private fun UtilityButton(
     iconRes: Int,
     contentDesc: String,
     active: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    activeColor: Color = MaterialTheme.colorScheme.primary
 ) {
     Surface(
         modifier = Modifier
@@ -938,15 +1019,14 @@ private fun UtilityButton(
             .clip(CircleShape)
             .clickable(onClick = onClick),
         shape = CircleShape,
-        color = if (active) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.primaryContainer,
+        color = if (active) activeColor else MaterialTheme.colorScheme.primaryContainer,
         shadowElevation = 2.dp
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
                 painter = painterResource(iconRes),
                 contentDescription = contentDesc,
-                tint = if (active) MaterialTheme.colorScheme.onPrimary
+                tint = if (active) Color.White
                 else MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.size(20.dp)
             )
@@ -984,7 +1064,7 @@ private fun formatCoord(latLng: LatLng?): String =
 
 // =====================================================================
 // Sistem izin BERURUTAN + DOUBLE CHECK:
-//   1. LOKASI (foreground) -> 2. LOKASI "Selalu izinkan" ->
+//   1. LOKASI -> 2. LOKASI "Selalu izinkan" ->
 //   3. NOTIFIKASI (Android 13+) -> 4. BATERAI "Tanpa pembatasan"
 // =====================================================================
 
@@ -1005,7 +1085,6 @@ private fun rememberAppPermissions(): Boolean {
 
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // ===== Double check: setiap kembali ke aplikasi, verifikasi ulang =====
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -1108,7 +1187,7 @@ private fun rememberAppPermissions(): Boolean {
                 }
             }
 
-            PermissionStep.DONE -> { /* Semua izin selesai diverifikasi */ }
+            PermissionStep.DONE -> { /* Selesai */ }
         }
     }
 

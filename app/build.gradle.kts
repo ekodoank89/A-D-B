@@ -24,8 +24,8 @@ android {
         applicationId = "awali.dengan.bismillah"
         minSdk = 30    // Android 11
         targetSdk = 35 // Android 15
-        versionCode = 5
-        versionName = "1.4.0"
+        versionCode = 6
+        versionName = "1.5.0"
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
     }
 
@@ -83,4 +83,7 @@ dependencies {
     // Google Maps Compose SDK
     implementation("com.google.maps.android:maps-compose:6.1.2")
     implementation("com.google.android.gms:play-services-maps:19.0.0")
+
+    // Xposed legacy API — compile-only, TIDAK ikut di-packaging ke APK
+    compileOnly(project(":xposed-stubs"))
 }

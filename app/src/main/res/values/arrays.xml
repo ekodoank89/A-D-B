@@ -1,7 +1,0 @@
-<resources>
-    <!-- Scope LSPosed: hanya 2 aplikasi rekomendasi -->
-    <string-array name="xposed_scope">
-        <item>com.gojek.partner</item>
-        <item>com.grabtaxi.driver2</item>
-    </string-array>
-</resources>

@@ -762,9 +762,8 @@ private fun PanelDivider() {
 }
 
 // =====================================================================
-// Panel tombol — urutan vertikal:
-//   [▶GRB] [GRB] [=sep x2=] [GJK] [▶GJK] [sep] [lock] [sep]
-//   [⭐Favorite] [=sep x2=] [Jitter]
+// Panel tombol — urutan vertikal (semua separator TUNGGAL):
+//   [▶GRB] [GRB] [sep] [GJK] [▶GJK] [sep] [lock] [sep] [⭐] [sep] [Jitter]
 // Separator selebar tombol play (46dp); Favorite & Jitter 46dp.
 // Movable (drag) + lock, semua state persisten.
 // =====================================================================
@@ -828,9 +827,7 @@ private fun PlayControlPanel(
 
             Spacer(Modifier.height(8.dp))
 
-            // 3. Separator (dobel)
-            PanelDivider()
-            Spacer(Modifier.height(4.dp))
+            // 3. Separator
             PanelDivider()
 
             Spacer(Modifier.height(8.dp))
@@ -878,9 +875,7 @@ private fun PlayControlPanel(
 
             Spacer(Modifier.height(8.dp))
 
-            // 10. Separator (dobel)
-            PanelDivider()
-            Spacer(Modifier.height(4.dp))
+            // 10. Separator
             PanelDivider()
 
             Spacer(Modifier.height(8.dp))

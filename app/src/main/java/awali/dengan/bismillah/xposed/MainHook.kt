@@ -1,27 +1,21 @@
 package awali.dengan.bismillah.xposed
 
 import android.util.Log
-import io.github.libxposed.api.AfterHookCallback
-import io.github.libxposed.api.Hooker
-import io.github.libxposed.api.XposedInterface
-import io.github.libxposed.api.XposedModule
-import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
-import io.github.libxposed.api.XposedModuleInterface.PackageLoadedParam
-import io.github.libxposed.api.annotations.AfterInvocation
-import io.github.libxposed.api.annotations.XposedHooker
+import de.robv.android.xposed.IXposedHookLoadPackage
+import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XposedBridge
+import de.robv.android.xposed.XposedHelpers
+import de.robv.android.xposed.callbacks.XC_LoadPackage
 
 /**
- * Entry point modul MODERN (META-INF/xposed/java_init.list).
+ * Entry point modul LEGACY (assets/xposed_init).
  * Target uji: LocTest (awali.dengan.bismillah.loctest) — aplikasi sendiri.
  *
  * Uji: Location.getLatitude/getLongitude pada proses LocTest dikembalikan
  * menjadi nilai uji. Jika LocTest menampilkan -6.123456 / 106.654321,
  * hook BEKERJA. Chip MOCK/ASLI tidak disentuh (isMock tidak di-hook).
  */
-class MainHook(
-    base: XposedInterface,
-    param: ModuleLoadedParam
-) : XposedModule(base, param) {
+class MainHook : IXposedHookLoadPackage {
 
     companion object {
         private const val TAG = "A-D-B"
@@ -30,57 +24,43 @@ class MainHook(
         private const val TEST_LNG = 106.654321
     }
 
-    private fun slog(msg: String) {
-        Log.i(TAG, msg)
-        runCatching { log(msg) } // LSPosed module log; gagal -> diam saja
-    }
+    override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
+        if (lpparam.packageName != TARGET_APP) return
 
-    init {
-        slog("Modul modern dimuat: process=${param.processName()}")
-    }
-
-    override fun onPackageLoaded(param: PackageLoadedParam) {
-        super.onPackageLoaded(param)
-        if (param.packageName() != TARGET_APP) return
-
-        slog("LocTest terdeteksi, memasang hook...")
+        XposedBridge.log("A-D-B: LocTest terdeteksi, memasang hook...")
         try {
-            val locationClass =
-                param.classLoader().loadClass("android.location.Location")
+            val cl = lpparam.classLoader
+                ?: run {
+                    XposedBridge.log("A-D-B: classLoader null")
+                    return
+                }
 
-            val lat = locationClass.getMethod("getLatitude")
-            val lng = locationClass.getMethod("getLongitude")
+            XposedHelpers.findAndHookMethod(
+                "android.location.Location",
+                cl,
+                "getLatitude",
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: XC_MethodHook.MethodHookParam) {
+                        param.result = TEST_LAT
+                    }
+                }
+            )
 
-            runCatching { hook(lat, LatHooker::class.java) }
-                .onFailure { Log.e(TAG, "Hook getLatitude gagal", it) }
-            runCatching { hook(lng, LngHooker::class.java) }
-                .onFailure { Log.e(TAG, "Hook getLongitude gagal", it) }
+            XposedHelpers.findAndHookMethod(
+                "android.location.Location",
+                cl,
+                "getLongitude",
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: XC_MethodHook.MethodHookParam) {
+                        param.result = TEST_LNG
+                    }
+                }
+            )
 
-            slog("Hook Location.getLatitude/getLongitude terpasang")
+            XposedBridge.log("A-D-B: hook Location.getLatitude/getLongitude terpasang")
         } catch (t: Throwable) {
+            XposedBridge.log("A-D-B: gagal memasang hook — $t")
             Log.e(TAG, "Gagal memasang hook", t)
-        }
-    }
-
-    @XposedHooker
-    class LatHooker : Hooker {
-        companion object {
-            @JvmStatic
-            @AfterInvocation
-            fun after(callback: AfterHookCallback) {
-                callback.setResult(TEST_LAT)
-            }
-        }
-    }
-
-    @XposedHooker
-    class LngHooker : Hooker {
-        companion object {
-            @JvmStatic
-            @AfterInvocation
-            fun after(callback: AfterHookCallback) {
-                callback.setResult(TEST_LNG)
-            }
         }
     }
 }

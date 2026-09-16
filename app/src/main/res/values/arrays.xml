@@ -1,6 +1,0 @@
-<resources>
-    <!-- Scope modul: HANYA aplikasi uji milik sendiri -->
-    <string-array name="xposed_scope">
-        <item>awali.dengan.bismillah.loctest</item>
-    </string-array>
-</resources>

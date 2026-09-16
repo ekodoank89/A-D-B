@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "A-D-B"
 include(":app")
+include(":xposed-stubs")

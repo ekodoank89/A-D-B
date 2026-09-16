@@ -1025,3 +1025,451 @@ private fun FavRow(
         }
     }
 }
+
+// =====================================================================
+// Panel tombol — favorite kini MEMBUKA DIALOG (bukan toggle marker).
+// Urutan: [▶GRB] [GRB] [sep] [GJK] [▶GJK] [sep] [lock] [sep] [⭐] [sep] [Jitter]
+// ⭐ menyala emas jika ada favorite di salah satu tab.
+// =====================================================================
+
+@Composable
+private fun PlayControlPanel(
+    grbPlaying: Boolean,
+    gjkPlaying: Boolean,
+    onGrbToggle: () -> Unit,
+    onGjkToggle: () -> Unit,
+    favActive: Boolean,
+    onFavClick: () -> Unit,
+    jitterEnabled: Boolean,
+    onJitterToggle: () -> Unit,
+    locked: Boolean,
+    onLockedChange: (Boolean) -> Unit,
+    dragOffset: Offset,
+    onDragOffsetChange: (Offset) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val currentDragOffset by rememberUpdatedState(dragOffset)
+    val currentLocked by rememberUpdatedState(locked)
+
+    Surface(
+        modifier = modifier
+            .offset { IntOffset(currentDragOffset.x.roundToInt(), currentDragOffset.y.roundToInt()) }
+            .pointerInput(Unit) {
+                detectDragGestures { change, dragAmount ->
+                    change.consume()
+                    if (!currentLocked) {
+                        onDragOffsetChange(currentDragOffset + dragAmount)
+                    }
+                }
+            },
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+        tonalElevation = 3.dp,
+        shadowElevation = 8.dp,
+        border = BorderStroke(
+            1.dp,
+            if (locked) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.outlineVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // 1. Tombol play/stop GRB
+            PlayCircleButton(
+                playing = grbPlaying,
+                activeColor = GRB_RED,
+                contentDesc = if (grbPlaying) "Stop GRB" else "Play GRB",
+                onClick = onGrbToggle
+            )
+
+            Spacer(Modifier.height(5.dp))
+
+            // 2. Label GRB
+            PlayLabel(text = "GRB", playing = grbPlaying, activeColor = GRB_RED)
+
+            Spacer(Modifier.height(8.dp))
+
+            // 3. Separator
+            PanelDivider()
+
+            Spacer(Modifier.height(8.dp))
+
+            // 4. Label GJK
+            PlayLabel(text = "GJK", playing = gjkPlaying, activeColor = GJK_BLUE)
+
+            Spacer(Modifier.height(5.dp))
+
+            // 5. Tombol play/stop GJK
+            PlayCircleButton(
+                playing = gjkPlaying,
+                activeColor = GJK_BLUE,
+                contentDesc = if (gjkPlaying) "Stop GJK" else "Play GJK",
+                onClick = onGjkToggle
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // 6. Separator
+            PanelDivider()
+
+            Spacer(Modifier.height(8.dp))
+
+            // 7. Tombol lock/unlock movable
+            LockButton(locked = locked, onToggle = { onLockedChange(!locked) })
+
+            Spacer(Modifier.height(8.dp))
+
+            // 8. Separator
+            PanelDivider()
+
+            Spacer(Modifier.height(8.dp))
+
+            // 9. Tombol Favorite — buka dialog menu favorite
+            UtilityButton(
+                iconRes = R.drawable.ic_star,
+                contentDesc = "Buka menu favorite",
+                active = favActive,
+                activeColor = FAV_GOLD,
+                size = 46.dp,
+                iconSize = 22.dp,
+                onClick = onFavClick
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // 10. Separator
+            PanelDivider()
+
+            Spacer(Modifier.height(8.dp))
+
+            // 11. Tombol Jitter
+            UtilityButton(
+                iconRes = R.drawable.ic_jitter,
+                contentDesc = if (jitterEnabled) "Jitter aktif" else "Jitter nonaktif",
+                active = jitterEnabled,
+                size = 46.dp,
+                iconSize = 22.dp,
+                onClick = onJitterToggle
+            )
+        }
+    }
+}
+
+// =====================================================================
+// Dialog Favorite:
+//  - 2 tab (GRB/GJK), tab terakhir di-tap DISIMPAN -> dibuka lagi nanti
+//  - Simpan dari Pin: nama saja, koordinat = pin tengah saat ini
+//  - Input Manual: nama + koordinat (lat, lng)
+//  - Daftar favorite: tap baris = fly ke lokasi, edit = rename inline,
+//    hapus = dialog konfirmasi (Hapus/Batal)
+// =====================================================================
+
+@Composable
+private fun FavoriteDialog(
+    prefs: SharedPreferences,
+    initialTab: FavTab,
+    grbFavs: List<FavItem>,
+    gjkFavs: List<FavItem>,
+    currentPin: LatLng,
+    onDismiss: () -> Unit,
+    onAdd: (FavTab, String, LatLng) -> Unit,
+    onRename: (FavTab, Long, String) -> Unit,
+    onDelete: (FavTab, Long) -> Unit,
+    onFlyTo: (LatLng) -> Unit
+) {
+    val context = LocalContext.current
+    var tab by remember { mutableStateOf(initialTab) }
+    var pinName by remember { mutableStateOf("") }
+    var manualName by remember { mutableStateOf("") }
+    var manualCoord by remember { mutableStateOf("") }
+    var editingId by remember { mutableStateOf<Long?>(null) }
+    var editingName by remember { mutableStateOf("") }
+    var deleteTarget by remember { mutableStateOf<FavItem?>(null) }
+
+    val list = if (tab == FavTab.GRB) grbFavs else gjkFavs
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = "Favorite", fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                // ===== Tab GRB / GJK =====
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FavTabChip(
+                        label = "GRB",
+                        active = tab == FavTab.GRB,
+                        activeColor = GRB_RED,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            tab = FavTab.GRB
+                            FavStore.saveLastTab(prefs, FavTab.GRB)
+                        }
+                    )
+                    FavTabChip(
+                        label = "GJK",
+                        active = tab == FavTab.GJK,
+                        activeColor = GJK_BLUE,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            tab = FavTab.GJK
+                            FavStore.saveLastTab(prefs, FavTab.GJK)
+                        }
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // ===== Simpan dari Pin =====
+                Text(
+                    text = "Simpan dari Pin (posisi tengah sekarang)",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = formatLatLng(currentPin),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = pinName,
+                    onValueChange = { pinName = it },
+                    label = { Text("Nama favorite") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                TextButton(
+                    onClick = {
+                        onAdd(tab, pinName, currentPin)
+                        pinName = ""
+                    },
+                    enabled = pinName.isNotBlank(),
+                    modifier = Modifier.align(Alignment.End)
+                ) { Text("Simpan dari Pin") }
+
+                HorizontalDivider()
+
+                Spacer(Modifier.height(8.dp))
+
+                // ===== Input Manual =====
+                Text(
+                    text = "Input Manual",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = manualName,
+                    onValueChange = { manualName = it },
+                    label = { Text("Nama") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = manualCoord,
+                    onValueChange = { manualCoord = it },
+                    label = { Text("Koordinat (lat, lng)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                TextButton(
+                    onClick = {
+                        val parts = manualCoord.split(",")
+                        val lat = parts.getOrNull(0)?.trim()?.toDoubleOrNull()
+                        val lng = parts.getOrNull(1)?.trim()?.toDoubleOrNull()
+                        if (lat == null || lng == null ||
+                            lat < -90.0 || lat > 90.0 || lng < -180.0 || lng > 180.0
+                        ) {
+                            Toast.makeText(
+                                context,
+                                "Koordinat tidak valid. Format: lat, lng",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            onAdd(tab, manualName, LatLng(lat, lng))
+                            manualName = ""
+                            manualCoord = ""
+                        }
+                    },
+                    enabled = manualName.isNotBlank() && manualCoord.isNotBlank(),
+                    modifier = Modifier.align(Alignment.End)
+                ) { Text("Tambah Manual") }
+
+                HorizontalDivider()
+
+                Spacer(Modifier.height(8.dp))
+
+                // ===== Daftar Favorite =====
+                Text(
+                    text = "Daftar Favorite (${list.size})",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(4.dp))
+
+                if (list.isEmpty()) {
+                    Text(
+                        text = "Belum ada favorite di tab ini",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = 220.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        list.forEach { item ->
+                            FavRow(
+                                item = item,
+                                editing = editingId == item.id,
+                                editName = editingName,
+                                onEditNameChange = { editingName = it },
+                                onStartEdit = {
+                                    editingId = item.id
+                                    editingName = item.name
+                                },
+                                onSaveEdit = {
+                                    if (editingName.isNotBlank()) {
+                                        onRename(tab, item.id, editingName)
+                                    }
+                                    editingId = null
+                                },
+                                onCancelEdit = { editingId = null },
+                                onRequestDelete = { deleteTarget = item },
+                                onClick = { onFlyTo(LatLng(item.lat, item.lng)) }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Tutup") }
+        }
+    )
+
+    // ===== Dialog konfirmasi hapus =====
+    deleteTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("Hapus favorite?") },
+            text = { Text("\"${target.name}\" akan dihapus permanen.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDelete(tab, target.id)
+                    deleteTarget = null
+                }) {
+                    Text("Hapus", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text("Batal") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun FavTabChip(
+    label: String,
+    active: Boolean,
+    activeColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(50),
+        color = if (active) activeColor else MaterialTheme.colorScheme.surfaceVariant,
+        shadowElevation = 1.dp
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .padding(vertical = 8.dp)
+                .fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+private fun FavRow(
+    item: FavItem,
+    editing: Boolean,
+    editName: String,
+    onEditNameChange: (String) -> Unit,
+    onStartEdit: () -> Unit,
+    onSaveEdit: () -> Unit,
+    onCancelEdit: () -> Unit,
+    onRequestDelete: () -> Unit,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (editing) {
+            OutlinedTextField(
+                value = editName,
+                onValueChange = onEditNameChange,
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = onSaveEdit, enabled = editName.isNotBlank()) {
+                Text("Simpan")
+            }
+            TextButton(onClick = onCancelEdit) { Text("Batal") }
+        } else {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onClick)
+                    .padding(vertical = 4.dp)
+            ) {
+                Text(
+                    text = item.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = formatLatLng(LatLng(item.lat, item.lng)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = onStartEdit) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_edit),
+                    contentDescription = "Edit ${item.name}",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            IconButton(onClick = onRequestDelete) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_delete),
+                    contentDescription = "Hapus ${item.name}",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}

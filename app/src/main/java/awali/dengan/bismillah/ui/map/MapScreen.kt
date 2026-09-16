@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -76,6 +77,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -101,7 +103,7 @@ import kotlin.random.Random
 
 private val DEFAULT_CENTER = LatLng(-6.2088, 106.8456) // Monas, Jakarta
 private const val DEFAULT_ZOOM = 17f
-private const val MAX_ZOOM = 21f // zoomTo() otomatis clamp ke max map
+private const val MAX_ZOOM = 21f
 private val PIN_SIZE = 40.dp
 
 // ===== Penyimpanan state persisten (tahan force stop) =====
@@ -146,7 +148,6 @@ private val DARK_MAP_STYLE = """
 // =====================================================================
 // Model & penyimpanan Favorite — list TERPISAH per tab (GRB/GJK)
 // Encoding: "id|nama|lat|lng", antar item dipisah ";"
-// Nama disanitasi (| dan ; diganti) agar tidak merusak encoding.
 // =====================================================================
 
 private data class FavItem(
@@ -210,7 +211,6 @@ fun MapScreen(modifier: Modifier = Modifier) {
     // ===== Mode gelap — PERSISTEN =====
     var darkMode by rememberPersistentBoolean("dark_mode", false)
 
-    // Override tema lokal: semua panel mengikuti mode terang/gelap
     val colorScheme = remember(darkMode) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (darkMode) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
@@ -235,10 +235,10 @@ fun MapScreen(modifier: Modifier = Modifier) {
             }
     }
 
-    // Target kamera = titik tengah layar (posisi pin). Live mengikuti pergeseran map.
+    // Target kamera = titik tengah layar (posisi pin)
     val target = cameraPositionState.position.target
 
-    // Ikon marker berbentuk pin (aman: fallback ke defaultMarker jika render gagal)
+    // Ikon marker pin-shape (aman: fallback defaultMarker)
     val grbMarkerIcon = rememberPinMarkerIcon(GRB_RED, BitmapDescriptorFactory.HUE_RED)
     val gjkMarkerIcon = rememberPinMarkerIcon(GJK_BLUE, BitmapDescriptorFactory.HUE_BLUE)
     val favMarkerIcon = rememberPinMarkerIcon(FAV_GOLD, BitmapDescriptorFactory.HUE_YELLOW)
@@ -247,7 +247,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
     var grbPlaying by rememberPersistentBoolean("grb_playing", false)
     var gjkPlaying by rememberPersistentBoolean("gjk_playing", false)
 
-    // ===== Koordinat TERKUNCI saat PLAY — PERSISTEN (marker ikut muncul lagi) =====
+    // ===== Koordinat TERKUNCI saat PLAY — PERSISTEN =====
     var grbCoord by rememberPersistentLatLng("grb_coord")
     var gjkCoord by rememberPersistentLatLng("gjk_coord")
 
@@ -257,15 +257,13 @@ fun MapScreen(modifier: Modifier = Modifier) {
     // ===== Chip expanded/collapsed — PERSISTEN =====
     var chipsExpanded by rememberPersistentBoolean("chips_expanded", true)
 
-    // ===== Lock & posisi geser panel play — PERSISTEN =====
+    // ===== Lock & posisi panel — PERSISTEN =====
     var playLocked by rememberPersistentBoolean("play_locked", false)
     var playDragOffset by rememberPersistentOffset("play_drag", Offset.Zero)
-
-    // ===== Lock & posisi geser panel utilitas — PERSISTEN =====
     var utilLocked by rememberPersistentBoolean("util_locked", false)
     var utilDragOffset by rememberPersistentOffset("util_drag", Offset.Zero)
 
-    // ===== First launch: pin otomatis ke titik biru (sekali saja) =====
+    // ===== First launch: pin ke titik biru (sekali saja) =====
     var firstLaunchDone by rememberPersistentBoolean("first_launch_done", false)
 
     // ===== Favorite =====
@@ -273,7 +271,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
     var grbFavs by remember { mutableStateOf(FavStore.loadList(prefs, FavTab.GRB)) }
     var gjkFavs by remember { mutableStateOf(FavStore.loadList(prefs, FavTab.GJK)) }
 
-    // ===== Simpan posisi kamera tiap berubah (throttle 1 detik) =====
+    // ===== Simpan kamera tiap berubah (throttle 1 detik) =====
     LaunchedEffect(cameraPositionState) {
         var lastSave = 0L
         snapshotFlow { cameraPositionState.position }.collect { pos ->
@@ -333,19 +331,15 @@ fun MapScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    // Animasi kamera (pin tengah) menuju koordinat
     fun flyTo(coord: LatLng) {
         scope.launch {
             cameraPositionState.animate(
-                CameraUpdateFactory.newLatLngZoom(
-                    coord,
-                    cameraPositionState.position.zoom
-                )
+                CameraUpdateFactory.newLatLngZoom(coord, cameraPositionState.position.zoom)
             )
         }
     }
 
-    // ===== Autofocus + KOMPAS =====
+    // ===== Autofocus + Kompas =====
     fun autoFocus() {
         if (!locationGranted) {
             Toast.makeText(context, "Izin lokasi belum diberikan", Toast.LENGTH_SHORT).show()
@@ -377,20 +371,15 @@ fun MapScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    // ===== Zoom IN: sekali tap langsung ke zoom MAKSIMAL =====
     fun zoomInMax() {
         scope.launch { cameraPositionState.animate(CameraUpdateFactory.zoomTo(MAX_ZOOM)) }
     }
 
-    // ===== Zoom OUT: mundur 2 level per tap =====
     fun zoomOut() {
         scope.launch { cameraPositionState.animate(CameraUpdateFactory.zoomBy(-2f)) }
     }
 
-    // ================================================================
-    // CRUD Favorite — update state + simpan ke prefs (tahan force stop)
-    // ================================================================
-
+    // ===== CRUD Favorite — update state + simpan disk =====
     fun addFav(tab: FavTab, name: String, coord: LatLng) {
         val item = FavItem(
             id = System.currentTimeMillis(),
@@ -432,7 +421,8 @@ fun MapScreen(modifier: Modifier = Modifier) {
         Toast.makeText(context, "Favorite dihapus", Toast.LENGTH_SHORT).show()
     }
 
-    MaterialTheme(colorScheme = colorScheme) {
+
+        MaterialTheme(colorScheme = colorScheme) {
         Box(modifier = modifier.fillMaxSize()) {
 
             // ===== Google Map + marker GRB/GJK + marker semua favorite (emas) =====
@@ -453,6 +443,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                     )
                 }
             ) {
+                // Marker GRB — pin MERAH, muncul saat PLAY, hilang saat STOP
                 grbCoord?.let { coord ->
                     Marker(
                         state = rememberMarkerState(key = "grb_$coord", position = coord),
@@ -461,6 +452,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                         anchor = Offset(0.5f, 1.0f)
                     )
                 }
+                // Marker GJK — pin BIRU, muncul saat PLAY, hilang saat STOP
                 gjkCoord?.let { coord ->
                     Marker(
                         state = rememberMarkerState(key = "gjk_$coord", position = coord),
@@ -579,6 +571,294 @@ fun MapScreen(modifier: Modifier = Modifier) {
 }
 
 // =====================================================================
+// Jitter: offset acak kecil pada koordinat (~= +-5 meter)
+// =====================================================================
+
+private fun applyJitter(coord: LatLng): LatLng = LatLng(
+    coord.latitude + Random.nextDouble(-JITTER_MAX_DEG, JITTER_MAX_DEG),
+    coord.longitude + Random.nextDouble(-JITTER_MAX_DEG, JITTER_MAX_DEG)
+)
+
+// =====================================================================
+// State PERSISTEN — disimpan ke SharedPreferences di setiap perubahan.
+// LocalContext.current dibaca DI LUAR remember {} (aturan Compose).
+// =====================================================================
+
+@Composable
+private fun rememberPersistentBoolean(key: String, default: Boolean): MutableState<Boolean> {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
+    val state = remember { mutableStateOf(prefs.getBoolean(key, default)) }
+    SideEffect {
+        prefs.edit().putBoolean(key, state.value).apply()
+    }
+    return state
+}
+
+// LatLng? — null disimpan dengan menghapus key (chip kosong / marker hilang)
+@Composable
+private fun rememberPersistentLatLng(key: String): MutableState<LatLng?> {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
+    val state = remember {
+        mutableStateOf<LatLng?>(
+            if (prefs.contains("${key}_lat") && prefs.contains("${key}_lng")) {
+                LatLng(
+                    Double.fromBits(prefs.getLong("${key}_lat", 0L)),
+                    Double.fromBits(prefs.getLong("${key}_lng", 0L))
+                )
+            } else {
+                null
+            }
+        )
+    }
+    SideEffect {
+        prefs.edit().apply {
+            val v = state.value
+            if (v == null) {
+                remove("${key}_lat")
+                remove("${key}_lng")
+            } else {
+                putLong("${key}_lat", v.latitude.toRawBits())
+                putLong("${key}_lng", v.longitude.toRawBits())
+            }
+        }.apply()
+    }
+    return state
+}
+
+// Offset (posisi geser panel)
+@Composable
+private fun rememberPersistentOffset(key: String, default: Offset): MutableState<Offset> {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
+    val state = remember {
+        mutableStateOf(
+            if (prefs.contains("${key}_x") && prefs.contains("${key}_y")) {
+                Offset(
+                    prefs.getFloat("${key}_x", 0f),
+                    prefs.getFloat("${key}_y", 0f)
+                )
+            } else {
+                default
+            }
+        )
+    }
+    SideEffect {
+        prefs.edit()
+            .putFloat("${key}_x", state.value.x)
+            .putFloat("${key}_y", state.value.y)
+            .apply()
+    }
+    return state
+}
+
+// =====================================================================
+// Ikon marker pin-shape — AMAN dari FC (runCatching + fallback defaultMarker)
+// =====================================================================
+
+@Composable
+private fun rememberPinMarkerIcon(tint: Color, fallbackHue: Float): BitmapDescriptor {
+    val context = LocalContext.current
+    return remember(tint) {
+        runCatching {
+            MapsInitializer.initialize(context.applicationContext)
+            val density = context.resources.displayMetrics.density
+            val sizePx = (34 * density).toInt().coerceAtLeast(1)
+            val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            val drawable = ContextCompat.getDrawable(context, R.drawable.ic_pin)!!
+            drawable.setTint(tint.toArgb())
+            drawable.setBounds(0, 0, sizePx, sizePx)
+            drawable.draw(canvas)
+            BitmapDescriptorFactory.fromBitmap(bitmap)
+        }.getOrElse {
+            BitmapDescriptorFactory.defaultMarker(fallbackHue)
+        }
+    }
+}
+
+
+// =====================================================================
+// Pin tengah — HIJAU
+// =====================================================================
+
+@Composable
+private fun CenterPin(modifier: Modifier = Modifier) {
+    Icon(
+        painter = painterResource(R.drawable.ic_pin),
+        contentDescription = null,
+        tint = PIN_GREEN,
+        modifier = modifier
+            .size(PIN_SIZE)
+            .offset(y = -(PIN_SIZE / 2))
+    )
+}
+
+// =====================================================================
+// Panel chip koordinat (PIN + GRB + GJK) — wrap-content + IntrinsicSize.Max
+// Tap PIN = collapse; tap GRB/GJK = fly ke marker
+// =====================================================================
+
+@Composable
+private fun CoordinatePanel(
+    pinCoord: LatLng,
+    grbCoord: LatLng?,
+    grbPlaying: Boolean,
+    gjkCoord: LatLng?,
+    gjkPlaying: Boolean,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onGrbChipClick: () -> Unit,
+    onGjkChipClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (expanded) {
+        Surface(
+            modifier = modifier,
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+            tonalElevation = 2.dp,
+            shadowElevation = 6.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Column(
+                modifier = Modifier
+                    .width(IntrinsicSize.Max)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                ChipRow(
+                    leading = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_pin),
+                            contentDescription = null,
+                            tint = PIN_GREEN,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    },
+                    label = "PIN",
+                    text = formatLatLng(pinCoord),
+                    onClick = { onExpandedChange(false) }
+                )
+
+                HorizontalDivider(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                )
+
+                ChipRow(
+                    leading = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_pin),
+                            contentDescription = null,
+                            tint = if (grbPlaying) GRB_RED else GRB_RED.copy(alpha = 0.4f),
+                            modifier = Modifier.size(13.dp)
+                        )
+                    },
+                    label = "GRB",
+                    text = formatCoord(grbCoord),
+                    enabled = grbCoord != null,
+                    onClick = onGrbChipClick
+                )
+
+                HorizontalDivider(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                )
+
+                ChipRow(
+                    leading = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_pin),
+                            contentDescription = null,
+                            tint = if (gjkPlaying) GJK_BLUE else GJK_BLUE.copy(alpha = 0.4f),
+                            modifier = Modifier.size(13.dp)
+                        )
+                    },
+                    label = "GJK",
+                    text = formatCoord(gjkCoord),
+                    enabled = gjkCoord != null,
+                    onClick = onGjkChipClick
+                )
+            }
+        }
+    } else {
+        Surface(
+            modifier = modifier
+                .clip(CircleShape)
+                .clickable { onExpandedChange(true) },
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+            tonalElevation = 2.dp,
+            shadowElevation = 6.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_eye),
+                contentDescription = "Tampilkan chip koordinat",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .padding(8.dp)
+                    .size(20.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChipRow(
+    leading: @Composable () -> Unit,
+    label: String,
+    text: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        leading()
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = if (enabled) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = if (enabled) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+        )
+    }
+}
+
+// =====================================================================
+// Separator sempit — lebar seukuran tombol play (46dp)
+// =====================================================================
+
+@Composable
+private fun PanelDivider() {
+    HorizontalDivider(
+        modifier = Modifier.width(46.dp),
+        thickness = 1.dp,
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+    )
+}
+
+// =====================================================================
 // Panel tombol — favorite kini MEMBUKA DIALOG (bukan toggle marker).
 // Urutan: [▶GRB] [GRB] [sep] [GJK] [▶GJK] [sep] [lock] [sep] [⭐] [sep] [Jitter]
 // ⭐ menyala emas jika ada favorite di salah satu tab.
@@ -708,6 +988,192 @@ private fun PlayControlPanel(
         }
     }
 }
+
+@Composable
+private fun PlayCircleButton(
+    playing: Boolean,
+    activeColor: Color,
+    contentDesc: String,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .size(46.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        shape = CircleShape,
+        color = if (playing) activeColor else MaterialTheme.colorScheme.primaryContainer,
+        shadowElevation = 2.dp
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                painter = painterResource(
+                    if (playing) R.drawable.ic_stop else R.drawable.ic_play
+                ),
+                contentDescription = contentDesc,
+                tint = if (playing) Color.White
+                else MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayLabel(
+    text: String,
+    playing: Boolean,
+    activeColor: Color
+) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.Bold,
+        color = if (playing) activeColor else MaterialTheme.colorScheme.onSurface
+    )
+}
+
+// =====================================================================
+// Panel utilitas — ICON-ONLY, vertikal (moveable + lock)
+// =====================================================================
+
+@Composable
+private fun UtilityPanel(
+    darkMode: Boolean,
+    onAutoFocus: () -> Unit,
+    onToggleDark: () -> Unit,
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit,
+    locked: Boolean,
+    onLockedChange: (Boolean) -> Unit,
+    dragOffset: Offset,
+    onDragOffsetChange: (Offset) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val currentDragOffset by rememberUpdatedState(dragOffset)
+    val currentLocked by rememberUpdatedState(locked)
+
+    Surface(
+        modifier = modifier
+            .offset { IntOffset(currentDragOffset.x.roundToInt(), currentDragOffset.y.roundToInt()) }
+            .pointerInput(Unit) {
+                detectDragGestures { change, dragAmount ->
+                    change.consume()
+                    if (!currentLocked) {
+                        onDragOffsetChange(currentDragOffset + dragAmount)
+                    }
+                }
+            },
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+        tonalElevation = 3.dp,
+        shadowElevation = 8.dp,
+        border = BorderStroke(
+            1.dp,
+            if (locked) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.outlineVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // 1. Autofocus + Kompas
+            UtilityButton(
+                iconRes = R.drawable.ic_my_location,
+                contentDesc = "Autofocus & Normalisasi Map",
+                active = false,
+                onClick = onAutoFocus
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // 2. Terang/Gelap
+            UtilityButton(
+                iconRes = R.drawable.ic_brightness,
+                contentDesc = "Terang/Gelap",
+                active = darkMode,
+                onClick = onToggleDark
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // 3. Lock/unlock movable panel ini
+            LockButton(locked = locked, onToggle = { onLockedChange(!locked) })
+
+            Spacer(Modifier.height(8.dp))
+
+            // 4. Zoom In (langsung maksimal)
+            UtilityButton(
+                iconRes = R.drawable.ic_plus,
+                contentDesc = "Zoom In",
+                active = false,
+                onClick = onZoomIn
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // 5. Zoom Out (mundur 2 level)
+            UtilityButton(
+                iconRes = R.drawable.ic_minus,
+                contentDesc = "Zoom Out",
+                active = false,
+                onClick = onZoomOut
+            )
+        }
+    }
+}
+
+// Tombol bulat icon-only — ukuran parameter
+@Composable
+private fun UtilityButton(
+    iconRes: Int,
+    contentDesc: String,
+    active: Boolean,
+    onClick: () -> Unit,
+    activeColor: Color = MaterialTheme.colorScheme.primary,
+    size: Dp = 40.dp,
+    iconSize: Dp = 20.dp
+) {
+    Surface(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        shape = CircleShape,
+        color = if (active) activeColor else MaterialTheme.colorScheme.primaryContainer,
+        shadowElevation = 2.dp
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = contentDesc,
+                tint = if (active) Color.White
+                else MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(iconSize)
+            )
+        }
+    }
+}
+
+@Composable
+private fun LockButton(locked: Boolean, onToggle: () -> Unit) {
+    IconButton(
+        onClick = onToggle,
+        modifier = Modifier.size(28.dp)
+    ) {
+        Icon(
+            painter = painterResource(
+                if (locked) R.drawable.ic_lock else R.drawable.ic_unlock
+            ),
+            contentDescription = if (locked) "Buka kunci" else "Kunci posisi",
+            tint = if (locked) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp)
+        )
+    }
+}
+
 
 // =====================================================================
 // Dialog Favorite:
@@ -1027,449 +1493,153 @@ private fun FavRow(
 }
 
 // =====================================================================
-// Panel tombol — favorite kini MEMBUKA DIALOG (bukan toggle marker).
-// Urutan: [▶GRB] [GRB] [sep] [GJK] [▶GJK] [sep] [lock] [sep] [⭐] [sep] [Jitter]
-// ⭐ menyala emas jika ada favorite di salah satu tab.
+// Util
 // =====================================================================
+
+private fun formatLatLng(latLng: LatLng): String =
+    String.format(Locale.US, "%.6f, %.6f", latLng.latitude, latLng.longitude)
+
+private fun formatCoord(latLng: LatLng?): String =
+    latLng?.let { formatLatLng(it) } ?: "--.------, --.------"
+
+// =====================================================================
+// Sistem izin BERURUTAN + DOUBLE CHECK:
+//   1. LOKASI (foreground) -> 2. LOKASI "Selalu izinkan" ->
+//   3. NOTIFIKASI (Android 13+) -> 4. BATERAI "Tanpa pembatasan"
+// =====================================================================
+
+private enum class PermissionStep { LOCATION, BACKGROUND, NOTIFICATION, BATTERY, DONE }
 
 @Composable
-private fun PlayControlPanel(
-    grbPlaying: Boolean,
-    gjkPlaying: Boolean,
-    onGrbToggle: () -> Unit,
-    onGjkToggle: () -> Unit,
-    favActive: Boolean,
-    onFavClick: () -> Unit,
-    jitterEnabled: Boolean,
-    onJitterToggle: () -> Unit,
-    locked: Boolean,
-    onLockedChange: (Boolean) -> Unit,
-    dragOffset: Offset,
-    onDragOffsetChange: (Offset) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val currentDragOffset by rememberUpdatedState(dragOffset)
-    val currentLocked by rememberUpdatedState(locked)
-
-    Surface(
-        modifier = modifier
-            .offset { IntOffset(currentDragOffset.x.roundToInt(), currentDragOffset.y.roundToInt()) }
-            .pointerInput(Unit) {
-                detectDragGestures { change, dragAmount ->
-                    change.consume()
-                    if (!currentLocked) {
-                        onDragOffsetChange(currentDragOffset + dragAmount)
-                    }
-                }
-            },
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
-        tonalElevation = 3.dp,
-        shadowElevation = 8.dp,
-        border = BorderStroke(
-            1.dp,
-            if (locked) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.outlineVariant
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // 1. Tombol play/stop GRB
-            PlayCircleButton(
-                playing = grbPlaying,
-                activeColor = GRB_RED,
-                contentDesc = if (grbPlaying) "Stop GRB" else "Play GRB",
-                onClick = onGrbToggle
-            )
-
-            Spacer(Modifier.height(5.dp))
-
-            // 2. Label GRB
-            PlayLabel(text = "GRB", playing = grbPlaying, activeColor = GRB_RED)
-
-            Spacer(Modifier.height(8.dp))
-
-            // 3. Separator
-            PanelDivider()
-
-            Spacer(Modifier.height(8.dp))
-
-            // 4. Label GJK
-            PlayLabel(text = "GJK", playing = gjkPlaying, activeColor = GJK_BLUE)
-
-            Spacer(Modifier.height(5.dp))
-
-            // 5. Tombol play/stop GJK
-            PlayCircleButton(
-                playing = gjkPlaying,
-                activeColor = GJK_BLUE,
-                contentDesc = if (gjkPlaying) "Stop GJK" else "Play GJK",
-                onClick = onGjkToggle
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            // 6. Separator
-            PanelDivider()
-
-            Spacer(Modifier.height(8.dp))
-
-            // 7. Tombol lock/unlock movable
-            LockButton(locked = locked, onToggle = { onLockedChange(!locked) })
-
-            Spacer(Modifier.height(8.dp))
-
-            // 8. Separator
-            PanelDivider()
-
-            Spacer(Modifier.height(8.dp))
-
-            // 9. Tombol Favorite — buka dialog menu favorite
-            UtilityButton(
-                iconRes = R.drawable.ic_star,
-                contentDesc = "Buka menu favorite",
-                active = favActive,
-                activeColor = FAV_GOLD,
-                size = 46.dp,
-                iconSize = 22.dp,
-                onClick = onFavClick
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            // 10. Separator
-            PanelDivider()
-
-            Spacer(Modifier.height(8.dp))
-
-            // 11. Tombol Jitter
-            UtilityButton(
-                iconRes = R.drawable.ic_jitter,
-                contentDesc = if (jitterEnabled) "Jitter aktif" else "Jitter nonaktif",
-                active = jitterEnabled,
-                size = 46.dp,
-                iconSize = 22.dp,
-                onClick = onJitterToggle
-            )
-        }
-    }
-}
-
-// =====================================================================
-// Dialog Favorite:
-//  - 2 tab (GRB/GJK), tab terakhir di-tap DISIMPAN -> dibuka lagi nanti
-//  - Simpan dari Pin: nama saja, koordinat = pin tengah saat ini
-//  - Input Manual: nama + koordinat (lat, lng)
-//  - Daftar favorite: tap baris = fly ke lokasi, edit = rename inline,
-//    hapus = dialog konfirmasi (Hapus/Batal)
-// =====================================================================
-
-@Composable
-private fun FavoriteDialog(
-    prefs: SharedPreferences,
-    initialTab: FavTab,
-    grbFavs: List<FavItem>,
-    gjkFavs: List<FavItem>,
-    currentPin: LatLng,
-    onDismiss: () -> Unit,
-    onAdd: (FavTab, String, LatLng) -> Unit,
-    onRename: (FavTab, Long, String) -> Unit,
-    onDelete: (FavTab, Long) -> Unit,
-    onFlyTo: (LatLng) -> Unit
-) {
+private fun rememberAppPermissions(): Boolean {
     val context = LocalContext.current
-    var tab by remember { mutableStateOf(initialTab) }
-    var pinName by remember { mutableStateOf("") }
-    var manualName by remember { mutableStateOf("") }
-    var manualCoord by remember { mutableStateOf("") }
-    var editingId by remember { mutableStateOf<Long?>(null) }
-    var editingName by remember { mutableStateOf("") }
-    var deleteTarget by remember { mutableStateOf<FavItem?>(null) }
 
-    val list = if (tab == FavTab.GRB) grbFavs else gjkFavs
+    var locationGranted by remember {
+        mutableStateOf(
+            isGranted(context, Manifest.permission.ACCESS_FINE_LOCATION) ||
+                isGranted(context, Manifest.permission.ACCESS_COARSE_LOCATION)
+        )
+    }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(text = "Favorite", fontWeight = FontWeight.Bold) },
-        text = {
-            Column {
-                // ===== Tab GRB / GJK =====
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    FavTabChip(
-                        label = "GRB",
-                        active = tab == FavTab.GRB,
-                        activeColor = GRB_RED,
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            tab = FavTab.GRB
-                            FavStore.saveLastTab(prefs, FavTab.GRB)
-                        }
-                    )
-                    FavTabChip(
-                        label = "GJK",
-                        active = tab == FavTab.GJK,
-                        activeColor = GJK_BLUE,
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            tab = FavTab.GJK
-                            FavStore.saveLastTab(prefs, FavTab.GJK)
-                        }
-                    )
+    var step by remember { mutableStateOf(PermissionStep.LOCATION) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // ===== Double check: setiap kembali ke aplikasi, verifikasi ulang =====
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                locationGranted =
+                    isGranted(context, Manifest.permission.ACCESS_FINE_LOCATION) ||
+                    isGranted(context, Manifest.permission.ACCESS_COARSE_LOCATION)
+
+                val anyMissing = !locationGranted ||
+                    !isGranted(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) ||
+                    (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        !isGranted(context, Manifest.permission.POST_NOTIFICATIONS)) ||
+                    !isIgnoringBatteryOptimizations(context)
+
+                if (anyMissing && step == PermissionStep.DONE) {
+                    step = PermissionStep.LOCATION
                 }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
-                Spacer(Modifier.height(12.dp))
+    // 1) Launcher LOKASI foreground
+    val locationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        locationGranted =
+            (result[Manifest.permission.ACCESS_FINE_LOCATION] == true) ||
+            (result[Manifest.permission.ACCESS_COARSE_LOCATION] == true)
+        step = PermissionStep.BACKGROUND
+    }
 
-                // ===== Simpan dari Pin =====
-                Text(
-                    text = "Simpan dari Pin (posisi tengah sekarang)",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = formatLatLng(currentPin),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = pinName,
-                    onValueChange = { pinName = it },
-                    label = { Text("Nama favorite") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                TextButton(
-                    onClick = {
-                        onAdd(tab, pinName, currentPin)
-                        pinName = ""
-                    },
-                    enabled = pinName.isNotBlank(),
-                    modifier = Modifier.align(Alignment.End)
-                ) { Text("Simpan dari Pin") }
+    // 2) Launcher LOKASI "Selalu izinkan" (background)
+    val bgLocationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        step = PermissionStep.NOTIFICATION
+    }
 
-                HorizontalDivider()
+    // 3) Launcher NOTIFIKASI
+    val notifLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        step = PermissionStep.BATTERY
+    }
 
-                Spacer(Modifier.height(8.dp))
+    // 4) Launcher BATERAI (dialog "Tanpa pembatasan")
+    val batteryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { _ ->
+        step = PermissionStep.DONE
+    }
 
-                // ===== Input Manual =====
-                Text(
-                    text = "Input Manual",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = manualName,
-                    onValueChange = { manualName = it },
-                    label = { Text("Nama") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = manualCoord,
-                    onValueChange = { manualCoord = it },
-                    label = { Text("Koordinat (lat, lng)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                TextButton(
-                    onClick = {
-                        val parts = manualCoord.split(",")
-                        val lat = parts.getOrNull(0)?.trim()?.toDoubleOrNull()
-                        val lng = parts.getOrNull(1)?.trim()?.toDoubleOrNull()
-                        if (lat == null || lng == null ||
-                            lat < -90.0 || lat > 90.0 || lng < -180.0 || lng > 180.0
-                        ) {
-                            Toast.makeText(
-                                context,
-                                "Koordinat tidak valid. Format: lat, lng",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        } else {
-                            onAdd(tab, manualName, LatLng(lat, lng))
-                            manualName = ""
-                            manualCoord = ""
-                        }
-                    },
-                    enabled = manualName.isNotBlank() && manualCoord.isNotBlank(),
-                    modifier = Modifier.align(Alignment.End)
-                ) { Text("Tambah Manual") }
-
-                HorizontalDivider()
-
-                Spacer(Modifier.height(8.dp))
-
-                // ===== Daftar Favorite =====
-                Text(
-                    text = "Daftar Favorite (${list.size})",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(Modifier.height(4.dp))
-
-                if (list.isEmpty()) {
-                    Text(
-                        text = "Belum ada favorite di tab ini",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
+    LaunchedEffect(step) {
+        when (step) {
+            PermissionStep.LOCATION -> {
+                if (locationGranted) {
+                    step = PermissionStep.BACKGROUND
                 } else {
-                    Column(
-                        modifier = Modifier
-                            .heightIn(max = 220.dp)
-                            .verticalScroll(rememberScrollState())
-                    ) {
-                        list.forEach { item ->
-                            FavRow(
-                                item = item,
-                                editing = editingId == item.id,
-                                editName = editingName,
-                                onEditNameChange = { editingName = it },
-                                onStartEdit = {
-                                    editingId = item.id
-                                    editingName = item.name
-                                },
-                                onSaveEdit = {
-                                    if (editingName.isNotBlank()) {
-                                        onRename(tab, item.id, editingName)
-                                    }
-                                    editingId = null
-                                },
-                                onCancelEdit = { editingId = null },
-                                onRequestDelete = { deleteTarget = item },
-                                onClick = { onFlyTo(LatLng(item.lat, item.lng)) }
-                            )
+                    locationLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
+                        )
+                    )
+                }
+            }
+
+            PermissionStep.BACKGROUND -> {
+                if (!locationGranted ||
+                    isGranted(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                ) {
+                    step = PermissionStep.NOTIFICATION
+                } else {
+                    bgLocationLauncher.launch(
+                        arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    )
+                }
+            }
+
+            PermissionStep.NOTIFICATION -> {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                    isGranted(context, Manifest.permission.POST_NOTIFICATIONS)
+                ) {
+                    step = PermissionStep.BATTERY
+                } else {
+                    notifLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+                }
+            }
+
+            PermissionStep.BATTERY -> {
+                if (isIgnoringBatteryOptimizations(context)) {
+                    step = PermissionStep.DONE
+                } else {
+                    batteryLauncher.launch(
+                        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                            data = Uri.parse("package:${context.packageName}")
                         }
-                    }
+                    )
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Tutup") }
-        }
-    )
 
-    // ===== Dialog konfirmasi hapus =====
-    deleteTarget?.let { target ->
-        AlertDialog(
-            onDismissRequest = { deleteTarget = null },
-            title = { Text("Hapus favorite?") },
-            text = { Text("\"${target.name}\" akan dihapus permanen.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    onDelete(tab, target.id)
-                    deleteTarget = null
-                }) {
-                    Text("Hapus", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) { Text("Batal") }
-            }
-        )
-    }
-}
-
-@Composable
-private fun FavTabChip(
-    label: String,
-    active: Boolean,
-    activeColor: Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier
-            .clip(RoundedCornerShape(50))
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(50),
-        color = if (active) activeColor else MaterialTheme.colorScheme.surfaceVariant,
-        shadowElevation = 1.dp
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
-            color = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .padding(vertical = 8.dp)
-                .fillMaxWidth()
-        )
-    }
-}
-
-@Composable
-private fun FavRow(
-    item: FavItem,
-    editing: Boolean,
-    editName: String,
-    onEditNameChange: (String) -> Unit,
-    onStartEdit: () -> Unit,
-    onSaveEdit: () -> Unit,
-    onCancelEdit: () -> Unit,
-    onRequestDelete: () -> Unit,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (editing) {
-            OutlinedTextField(
-                value = editName,
-                onValueChange = onEditNameChange,
-                singleLine = true,
-                modifier = Modifier.weight(1f)
-            )
-            TextButton(onClick = onSaveEdit, enabled = editName.isNotBlank()) {
-                Text("Simpan")
-            }
-            TextButton(onClick = onCancelEdit) { Text("Batal") }
-        } else {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable(onClick = onClick)
-                    .padding(vertical = 4.dp)
-            ) {
-                Text(
-                    text = item.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = formatLatLng(LatLng(item.lat, item.lng)),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            IconButton(onClick = onStartEdit) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_edit),
-                    contentDescription = "Edit ${item.name}",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-            IconButton(onClick = onRequestDelete) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_delete),
-                    contentDescription = "Hapus ${item.name}",
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
+            PermissionStep.DONE -> { /* Semua izin selesai diverifikasi */ }
         }
     }
+
+    return locationGranted
 }
+
+private fun isGranted(context: Context, permission: String): Boolean =
+    ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+
+private fun isIgnoringBatteryOptimizations(context: Context): Boolean =
+    runCatching {
+        val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        pm.isIgnoringBatteryOptimizations(context.packageName)
+    }.getOrDefault(false)

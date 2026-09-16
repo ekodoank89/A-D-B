@@ -24,12 +24,16 @@ class MainHook : IXposedHookLoadPackage {
         private const val TEST_LNG = 106.654321
     }
 
-    override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
+        override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
+        // Log TANPA syarat — diagnostik apakah modul ter-load ke proses ini
+        XposedBridge.log("A-D-B: handleLoadPackage -> ${lpparam.packageName}")
+
         if (lpparam.packageName != TARGET_APP) return
 
         XposedBridge.log("A-D-B: LocTest terdeteksi, memasang hook...")
         try {
             val cl = lpparam.classLoader
+            // ... dst (sisanya TIDAK berubah)
                 ?: run {
                     XposedBridge.log("A-D-B: classLoader null")
                     return

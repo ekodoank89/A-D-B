@@ -1,2 +1,1 @@
-# Entry modul Xposed di-load via reflection oleh framework
--keep class awali.dengan.bismillah.xposed.** { *; }
+# A-D-B — aplikasi map murni, tanpa aturan proguard khusus.

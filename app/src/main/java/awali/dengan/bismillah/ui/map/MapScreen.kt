@@ -103,7 +103,7 @@ import kotlin.random.Random
 
 private val DEFAULT_CENTER = LatLng(-6.2088, 106.8456) // Monas, Jakarta
 private const val DEFAULT_ZOOM = 17f
-private const val MAX_ZOOM = 21f
+private const val MAX_ZOOM = 21f // zoomTo() otomatis clamp ke max map
 private val PIN_SIZE = 40.dp
 
 // ===== Penyimpanan state persisten (tahan force stop) =====
@@ -116,7 +116,7 @@ private const val KEY_CAM_ZOOM = "cam_zoom"
 private val PIN_GREEN = Color(0xFF2E7D32)  // pin tengah: HIJAU
 private val GRB_RED = Color(0xFFE53935)    // marker GRB: MERAH
 private val GJK_BLUE = Color(0xFF1E88E5)   // marker GJK: BIRU
-private val FAV_GOLD = Color(0xFFFFB300)   // marker Favorite: EMAS
+private val FAV_GOLD = Color(0xFFFFB300)   // aksen favorite: EMAS
 
 // ===== Jitter: offset acak maksimal (derajat) ~= +-5 meter =====
 private const val JITTER_MAX_DEG = 0.00005
@@ -148,6 +148,7 @@ private val DARK_MAP_STYLE = """
 // =====================================================================
 // Model & penyimpanan Favorite — list TERPISAH per tab (GRB/GJK)
 // Encoding: "id|nama|lat|lng", antar item dipisah ";"
+// Nama disanitasi (| dan ; diganti) agar tidak merusak encoding.
 // =====================================================================
 
 private data class FavItem(
@@ -211,6 +212,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
     // ===== Mode gelap — PERSISTEN =====
     var darkMode by rememberPersistentBoolean("dark_mode", false)
 
+    // Override tema lokal: semua panel mengikuti mode terang/gelap
     val colorScheme = remember(darkMode) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (darkMode) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
@@ -235,19 +237,18 @@ fun MapScreen(modifier: Modifier = Modifier) {
             }
     }
 
-    // Target kamera = titik tengah layar (posisi pin)
+    // Target kamera = titik tengah layar (posisi pin). Live mengikuti pergeseran map.
     val target = cameraPositionState.position.target
 
-    // Ikon marker pin-shape (aman: fallback defaultMarker)
+    // Ikon marker pin-shape (aman: fallback defaultMarker jika render gagal)
     val grbMarkerIcon = rememberPinMarkerIcon(GRB_RED, BitmapDescriptorFactory.HUE_RED)
     val gjkMarkerIcon = rememberPinMarkerIcon(GJK_BLUE, BitmapDescriptorFactory.HUE_BLUE)
-    val favMarkerIcon = rememberPinMarkerIcon(FAV_GOLD, BitmapDescriptorFactory.HUE_YELLOW)
 
     // ===== Status play/stop — PERSISTEN =====
     var grbPlaying by rememberPersistentBoolean("grb_playing", false)
     var gjkPlaying by rememberPersistentBoolean("gjk_playing", false)
 
-    // ===== Koordinat TERKUNCI saat PLAY — PERSISTEN =====
+    // ===== Koordinat TERKUNCI saat PLAY — PERSISTEN (marker ikut muncul lagi) =====
     var grbCoord by rememberPersistentLatLng("grb_coord")
     var gjkCoord by rememberPersistentLatLng("gjk_coord")
 
@@ -257,13 +258,15 @@ fun MapScreen(modifier: Modifier = Modifier) {
     // ===== Chip expanded/collapsed — PERSISTEN =====
     var chipsExpanded by rememberPersistentBoolean("chips_expanded", true)
 
-    // ===== Lock & posisi panel — PERSISTEN =====
+    // ===== Lock & posisi geser panel play — PERSISTEN =====
     var playLocked by rememberPersistentBoolean("play_locked", false)
     var playDragOffset by rememberPersistentOffset("play_drag", Offset.Zero)
+
+    // ===== Lock & posisi geser panel utilitas — PERSISTEN =====
     var utilLocked by rememberPersistentBoolean("util_locked", false)
     var utilDragOffset by rememberPersistentOffset("util_drag", Offset.Zero)
 
-    // ===== First launch: pin ke titik biru (sekali saja) =====
+    // ===== First launch: pin otomatis ke titik biru (sekali saja) =====
     var firstLaunchDone by rememberPersistentBoolean("first_launch_done", false)
 
     // ===== Favorite =====
@@ -271,7 +274,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
     var grbFavs by remember { mutableStateOf(FavStore.loadList(prefs, FavTab.GRB)) }
     var gjkFavs by remember { mutableStateOf(FavStore.loadList(prefs, FavTab.GJK)) }
 
-    // ===== Simpan kamera tiap berubah (throttle 1 detik) =====
+    // ===== Simpan posisi kamera tiap berubah (throttle 1 detik) =====
     LaunchedEffect(cameraPositionState) {
         var lastSave = 0L
         snapshotFlow { cameraPositionState.position }.collect { pos ->
@@ -331,15 +334,19 @@ fun MapScreen(modifier: Modifier = Modifier) {
         }
     }
 
+    // Animasi kamera (pin tengah) menuju koordinat
     fun flyTo(coord: LatLng) {
         scope.launch {
             cameraPositionState.animate(
-                CameraUpdateFactory.newLatLngZoom(coord, cameraPositionState.position.zoom)
+                CameraUpdateFactory.newLatLngZoom(
+                    coord,
+                    cameraPositionState.position.zoom
+                )
             )
         }
     }
 
-    // ===== Autofocus + Kompas =====
+    // ===== Autofocus + KOMPAS: ke lokasi perangkat + normalisasi rotasi map =====
     fun autoFocus() {
         if (!locationGranted) {
             Toast.makeText(context, "Izin lokasi belum diberikan", Toast.LENGTH_SHORT).show()
@@ -356,7 +363,9 @@ fun MapScreen(modifier: Modifier = Modifier) {
                         CameraUpdateFactory.newCameraPosition(
                             CameraPosition(
                                 LatLng(loc.latitude, loc.longitude),
-                                cameraPositionState.position.zoom, 0f, 0f
+                                cameraPositionState.position.zoom,
+                                0f, // tilt dinormalkan
+                                0f  // bearing dinormalkan (utara di atas)
                             )
                         )
                     )
@@ -371,15 +380,17 @@ fun MapScreen(modifier: Modifier = Modifier) {
         }
     }
 
+    // ===== Zoom IN: sekali tap langsung ke zoom MAKSIMAL =====
     fun zoomInMax() {
         scope.launch { cameraPositionState.animate(CameraUpdateFactory.zoomTo(MAX_ZOOM)) }
     }
 
+    // ===== Zoom OUT: mundur 2 level per tap =====
     fun zoomOut() {
         scope.launch { cameraPositionState.animate(CameraUpdateFactory.zoomBy(-2f)) }
     }
 
-    // ===== CRUD Favorite — update state + simpan disk =====
+    // ===== Tambah favorite (dari pin atau manual) =====
     fun addFav(tab: FavTab, name: String, coord: LatLng) {
         val item = FavItem(
             id = System.currentTimeMillis(),
@@ -397,9 +408,10 @@ fun MapScreen(modifier: Modifier = Modifier) {
         Toast.makeText(context, "Favorite \"${item.name}\" disimpan", Toast.LENGTH_SHORT).show()
     }
 
-    fun renameFav(tab: FavTab, id: Long, newName: String) {
+    // ===== Update favorite (edit nama + koordinat) =====
+    fun updateFav(tab: FavTab, id: Long, newName: String, newLat: Double, newLng: Double) {
         fun patch(list: List<FavItem>) = list.map {
-            if (it.id == id) it.copy(name = newName.trim()) else it
+            if (it.id == id) it.copy(name = newName.trim(), lat = newLat, lng = newLng) else it
         }
         if (tab == FavTab.GRB) {
             grbFavs = patch(grbFavs)
@@ -408,8 +420,10 @@ fun MapScreen(modifier: Modifier = Modifier) {
             gjkFavs = patch(gjkFavs)
             FavStore.saveList(prefs, FavTab.GJK, gjkFavs)
         }
+        Toast.makeText(context, "Favorite diperbarui", Toast.LENGTH_SHORT).show()
     }
 
+    // ===== Hapus favorite =====
     fun deleteFav(tab: FavTab, id: Long) {
         if (tab == FavTab.GRB) {
             grbFavs = grbFavs.filterNot { it.id == id }
@@ -425,7 +439,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
         MaterialTheme(colorScheme = colorScheme) {
         Box(modifier = modifier.fillMaxSize()) {
 
-            // ===== Google Map + marker GRB/GJK + marker semua favorite (emas) =====
+            // ===== Google Map full width + marker GRB/GJK (tanpa marker favorite) =====
             GoogleMap(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
@@ -461,22 +475,12 @@ fun MapScreen(modifier: Modifier = Modifier) {
                         anchor = Offset(0.5f, 1.0f)
                     )
                 }
-                // Marker emas untuk setiap favorite (kedua tab)
-                (grbFavs + gjkFavs).forEach { fav ->
-                    val pos = LatLng(fav.lat, fav.lng)
-                    Marker(
-                        state = rememberMarkerState(key = "fav_${fav.id}_$pos", position = pos),
-                        title = fav.name,
-                        icon = favMarkerIcon,
-                        anchor = Offset(0.5f, 1.0f)
-                    )
-                }
             }
 
             // ===== Pin HIJAU tetap di tengah layar =====
             CenterPin(modifier = Modifier.align(Alignment.Center))
 
-            // ===== Panel chip koordinat: PIN + GRB + GJK =====
+            // ===== Panel chip koordinat: PIN + GRB + GJK (atas-tengah, wrap-content) =====
             CoordinatePanel(
                 pinCoord = target,
                 grbCoord = grbCoord,
@@ -500,6 +504,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                 onGrbToggle = {
                     if (!grbPlaying) {
                         val base = cameraPositionState.position.target
+                        // Jitter ON -> koordinat capture diberi offset acak kecil
                         grbCoord = if (jitterEnabled) applyJitter(base) else base
                         grbPlaying = true
                     } else {
@@ -531,7 +536,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                     .padding(bottom = 16.dp)
             )
 
-            // ===== Panel utilitas icon-only =====
+            // ===== Panel utilitas icon-only (moveable + lock, posisi persisten) =====
             UtilityPanel(
                 darkMode = darkMode,
                 onAutoFocus = { autoFocus() },
@@ -558,7 +563,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                     currentPin = target,
                     onDismiss = { showFavDialog = false },
                     onAdd = { tab, name, coord -> addFav(tab, name, coord) },
-                    onRename = { tab, id, name -> renameFav(tab, id, name) },
+                    onUpdate = { tab, id, name, lat, lng -> updateFav(tab, id, name, lat, lng) },
                     onDelete = { tab, id -> deleteFav(tab, id) },
                     onFlyTo = { coord ->
                         showFavDialog = false
@@ -571,7 +576,8 @@ fun MapScreen(modifier: Modifier = Modifier) {
 }
 
 // =====================================================================
-// Jitter: offset acak kecil pada koordinat (~= +-5 meter)
+// Jitter: offset acak kecil pada koordinat (lat & lng masing-masing
+// digeser acak dalam rentang +-JITTER_MAX_DEG ~= +-5 meter)
 // =====================================================================
 
 private fun applyJitter(coord: LatLng): LatLng = LatLng(
@@ -580,7 +586,8 @@ private fun applyJitter(coord: LatLng): LatLng = LatLng(
 )
 
 // =====================================================================
-// State PERSISTEN — disimpan ke SharedPreferences di setiap perubahan.
+// State PERSISTEN — disimpan ke SharedPreferences di setiap perubahan,
+// dimuat ulang saat aplikasi dibuka (termasuk setelah force stop).
 // LocalContext.current dibaca DI LUAR remember {} (aturan Compose).
 // =====================================================================
 
@@ -678,7 +685,6 @@ private fun rememberPinMarkerIcon(tint: Color, fallbackHue: Float): BitmapDescri
     }
 }
 
-
 // =====================================================================
 // Pin tengah — HIJAU
 // =====================================================================
@@ -698,6 +704,7 @@ private fun CenterPin(modifier: Modifier = Modifier) {
 // =====================================================================
 // Panel chip koordinat (PIN + GRB + GJK) — wrap-content + IntrinsicSize.Max
 // Tap PIN = collapse; tap GRB/GJK = fly ke marker
+// Icon chip GRB = pin MERAH, GJK = pin BIRU (penuh saat play, redup saat stop)
 // =====================================================================
 
 @Composable
@@ -861,7 +868,7 @@ private fun PanelDivider() {
 // =====================================================================
 // Panel tombol — favorite kini MEMBUKA DIALOG (bukan toggle marker).
 // Urutan: [▶GRB] [GRB] [sep] [GJK] [▶GJK] [sep] [lock] [sep] [⭐] [sep] [Jitter]
-// ⭐ menyala emas jika ada favorite di salah satu tab.
+// ⭐ = icon BINTANG EMAS; latar emas lembut jika ada favorite tersimpan.
 // =====================================================================
 
 @Composable
@@ -958,12 +965,13 @@ private fun PlayControlPanel(
 
             Spacer(Modifier.height(8.dp))
 
-            // 9. Tombol Favorite — buka dialog menu favorite
+            // 9. Tombol Favorite — icon BINTANG EMAS, buka dialog menu favorite
             UtilityButton(
                 iconRes = R.drawable.ic_star,
                 contentDesc = "Buka menu favorite",
                 active = favActive,
-                activeColor = FAV_GOLD,
+                activeColor = FAV_GOLD.copy(alpha = 0.25f),
+                iconTint = FAV_GOLD,
                 size = 46.dp,
                 iconSize = 22.dp,
                 onClick = onFavClick
@@ -1034,7 +1042,9 @@ private fun PlayLabel(
 }
 
 // =====================================================================
-// Panel utilitas — ICON-ONLY, vertikal (moveable + lock)
+// Panel utilitas — ICON-ONLY, vertikal:
+//   [Autofocus+Kompas] -> [Terang/Gelap] -> [lock] -> [+] -> [-]
+// Movable (drag) dengan lock independen dari panel utama.
 // =====================================================================
 
 @Composable
@@ -1078,7 +1088,7 @@ private fun UtilityPanel(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 1. Autofocus + Kompas
+            // 1. Autofocus + Kompas (icon saja)
             UtilityButton(
                 iconRes = R.drawable.ic_my_location,
                 contentDesc = "Autofocus & Normalisasi Map",
@@ -1088,7 +1098,7 @@ private fun UtilityPanel(
 
             Spacer(Modifier.height(8.dp))
 
-            // 2. Terang/Gelap
+            // 2. Terang/Gelap (icon saja)
             UtilityButton(
                 iconRes = R.drawable.ic_brightness,
                 contentDesc = "Terang/Gelap",
@@ -1103,7 +1113,7 @@ private fun UtilityPanel(
 
             Spacer(Modifier.height(8.dp))
 
-            // 4. Zoom In (langsung maksimal)
+            // 4. Zoom In (icon +, tap = langsung zoom maksimal)
             UtilityButton(
                 iconRes = R.drawable.ic_plus,
                 contentDesc = "Zoom In",
@@ -1113,7 +1123,7 @@ private fun UtilityPanel(
 
             Spacer(Modifier.height(8.dp))
 
-            // 5. Zoom Out (mundur 2 level)
+            // 5. Zoom Out (icon -, mundur 2 level)
             UtilityButton(
                 iconRes = R.drawable.ic_minus,
                 contentDesc = "Zoom Out",
@@ -1124,7 +1134,7 @@ private fun UtilityPanel(
     }
 }
 
-// Tombol bulat icon-only — ukuran parameter
+// Tombol bulat icon-only — ukuran & warna icon parameter
 @Composable
 private fun UtilityButton(
     iconRes: Int,
@@ -1133,7 +1143,8 @@ private fun UtilityButton(
     onClick: () -> Unit,
     activeColor: Color = MaterialTheme.colorScheme.primary,
     size: Dp = 40.dp,
-    iconSize: Dp = 20.dp
+    iconSize: Dp = 20.dp,
+    iconTint: Color? = null
 ) {
     Surface(
         modifier = Modifier
@@ -1148,7 +1159,7 @@ private fun UtilityButton(
             Icon(
                 painter = painterResource(iconRes),
                 contentDescription = contentDesc,
-                tint = if (active) Color.White
+                tint = iconTint ?: if (active) Color.White
                 else MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.size(iconSize)
             )
@@ -1174,14 +1185,16 @@ private fun LockButton(locked: Boolean, onToggle: () -> Unit) {
     }
 }
 
-
 // =====================================================================
 // Dialog Favorite:
 //  - 2 tab (GRB/GJK), tab terakhir di-tap DISIMPAN -> dibuka lagi nanti
-//  - Simpan dari Pin: nama saja, koordinat = pin tengah saat ini
-//  - Input Manual: nama + koordinat (lat, lng)
-//  - Daftar favorite: tap baris = fly ke lokasi, edit = rename inline,
-//    hapus = dialog konfirmasi (Hapus/Batal)
+//  - Form "Dari Pin": nama manual, Latitude & Longitude OTOMATIS
+//    terisi dari pin tengah (read-only) -> Tombol Simpan
+//  - Form "Manual": nama + latitude + longitude manual -> Tombol Simpan
+//  - Tap ✏ pada item -> form "Edit Favorite" terisi dari item
+//    (nama, latitude, longitude) -> Tombol Update
+//  - Tap 🗑 pada item -> dialog konfirmasi (Hapus/Batal)
+//  - Tap baris = fly ke lokasi
 // =====================================================================
 
 @Composable
@@ -1193,20 +1206,37 @@ private fun FavoriteDialog(
     currentPin: LatLng,
     onDismiss: () -> Unit,
     onAdd: (FavTab, String, LatLng) -> Unit,
-    onRename: (FavTab, Long, String) -> Unit,
+    onUpdate: (FavTab, Long, String, Double, Double) -> Unit,
     onDelete: (FavTab, Long) -> Unit,
     onFlyTo: (LatLng) -> Unit
 ) {
     val context = LocalContext.current
     var tab by remember { mutableStateOf(initialTab) }
+
+    // Form "Dari Pin" — lat/lng otomatis dari pin tengah (read-only)
     var pinName by remember { mutableStateOf("") }
+
+    // Form "Manual"
     var manualName by remember { mutableStateOf("") }
-    var manualCoord by remember { mutableStateOf("") }
+    var manualLat by remember { mutableStateOf("") }
+    var manualLng by remember { mutableStateOf("") }
+
+    // Form "Edit Favorite"
     var editingId by remember { mutableStateOf<Long?>(null) }
     var editingName by remember { mutableStateOf("") }
+    var editingLat by remember { mutableStateOf("") }
+    var editingLng by remember { mutableStateOf("") }
+
     var deleteTarget by remember { mutableStateOf<FavItem?>(null) }
 
     val list = if (tab == FavTab.GRB) grbFavs else gjkFavs
+
+    fun cancelEdit() {
+        editingId = null
+        editingName = ""
+        editingLat = ""
+        editingLng = ""
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1225,6 +1255,7 @@ private fun FavoriteDialog(
                         modifier = Modifier.weight(1f),
                         onClick = {
                             tab = FavTab.GRB
+                            cancelEdit()
                             FavStore.saveLastTab(prefs, FavTab.GRB)
                         }
                     )
@@ -1235,6 +1266,7 @@ private fun FavoriteDialog(
                         modifier = Modifier.weight(1f),
                         onClick = {
                             tab = FavTab.GJK
+                            cancelEdit()
                             FavStore.saveLastTab(prefs, FavTab.GJK)
                         }
                     )
@@ -1242,82 +1274,157 @@ private fun FavoriteDialog(
 
                 Spacer(Modifier.height(12.dp))
 
-                // ===== Simpan dari Pin =====
-                Text(
-                    text = "Simpan dari Pin (posisi tengah sekarang)",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = formatLatLng(currentPin),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = pinName,
-                    onValueChange = { pinName = it },
-                    label = { Text("Nama favorite") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                TextButton(
-                    onClick = {
-                        onAdd(tab, pinName, currentPin)
-                        pinName = ""
-                    },
-                    enabled = pinName.isNotBlank(),
-                    modifier = Modifier.align(Alignment.End)
-                ) { Text("Simpan dari Pin") }
+                if (editingId != null) {
+                    // ================= Edit Favorite =================
+                    Text(
+                        text = "Edit Favorite",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = editingName,
+                        onValueChange = { editingName = it },
+                        label = { Text("Nama Favorite") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = editingLat,
+                        onValueChange = { editingLat = it },
+                        label = { Text("Latitude") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = editingLng,
+                        onValueChange = { editingLng = it },
+                        label = { Text("Longitude") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    TextButton(
+                        onClick = {
+                            val lat = editingLat.trim().toDoubleOrNull()
+                            val lng = editingLng.trim().toDoubleOrNull()
+                            if (editingName.isBlank() || lat == null || lng == null ||
+                                lat < -90.0 || lat > 90.0 || lng < -180.0 || lng > 180.0
+                            ) {
+                                Toast.makeText(
+                                    context,
+                                    "Data tidak valid. Periksa nama & koordinat.",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else {
+                                onUpdate(tab, editingId!!, editingName, lat, lng)
+                                cancelEdit()
+                            }
+                        },
+                        modifier = Modifier.align(Alignment.End)
+                    ) { Text("Update") }
+                } else {
+                    // ================= Dari Pin =================
+                    Text(
+                        text = "Dari Pin",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = pinName,
+                        onValueChange = { pinName = it },
+                        label = { Text("Nama Favorite") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    // Latitude OTOMATIS dari pin tengah (read-only)
+                    OutlinedTextField(
+                        value = String.format(Locale.US, "%.6f", currentPin.latitude),
+                        onValueChange = {},
+                        label = { Text("Latitude") },
+                        readOnly = true,
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    // Longitude OTOMATIS dari pin tengah (read-only)
+                    OutlinedTextField(
+                        value = String.format(Locale.US, "%.6f", currentPin.longitude),
+                        onValueChange = {},
+                        label = { Text("Longitude") },
+                        readOnly = true,
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    TextButton(
+                        onClick = {
+                            onAdd(tab, pinName, currentPin)
+                            pinName = ""
+                        },
+                        enabled = pinName.isNotBlank(),
+                        modifier = Modifier.align(Alignment.End)
+                    ) { Text("Simpan") }
 
-                HorizontalDivider()
+                    HorizontalDivider()
+                    Spacer(Modifier.height(8.dp))
 
-                Spacer(Modifier.height(8.dp))
-
-                // ===== Input Manual =====
-                Text(
-                    text = "Input Manual",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = manualName,
-                    onValueChange = { manualName = it },
-                    label = { Text("Nama") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = manualCoord,
-                    onValueChange = { manualCoord = it },
-                    label = { Text("Koordinat (lat, lng)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                TextButton(
-                    onClick = {
-                        val parts = manualCoord.split(",")
-                        val lat = parts.getOrNull(0)?.trim()?.toDoubleOrNull()
-                        val lng = parts.getOrNull(1)?.trim()?.toDoubleOrNull()
-                        if (lat == null || lng == null ||
-                            lat < -90.0 || lat > 90.0 || lng < -180.0 || lng > 180.0
-                        ) {
-                            Toast.makeText(
-                                context,
-                                "Koordinat tidak valid. Format: lat, lng",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        } else {
-                            onAdd(tab, manualName, LatLng(lat, lng))
-                            manualName = ""
-                            manualCoord = ""
-                        }
-                    },
-                    enabled = manualName.isNotBlank() && manualCoord.isNotBlank(),
-                    modifier = Modifier.align(Alignment.End)
-                ) { Text("Tambah Manual") }
+                    // ================= Manual =================
+                    Text(
+                        text = "Manual",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = manualName,
+                        onValueChange = { manualName = it },
+                        label = { Text("Nama Favorite") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = manualLat,
+                        onValueChange = { manualLat = it },
+                        label = { Text("Latitude") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = manualLng,
+                        onValueChange = { manualLng = it },
+                        label = { Text("Longitude") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    TextButton(
+                        onClick = {
+                            val lat = manualLat.trim().toDoubleOrNull()
+                            val lng = manualLng.trim().toDoubleOrNull()
+                            if (manualName.isBlank() || lat == null || lng == null ||
+                                lat < -90.0 || lat > 90.0 || lng < -180.0 || lng > 180.0
+                            ) {
+                                Toast.makeText(
+                                    context,
+                                    "Data tidak valid. Periksa nama & koordinat.",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else {
+                                onAdd(tab, manualName, LatLng(lat, lng))
+                                manualName = ""
+                                manualLat = ""
+                                manualLng = ""
+                            }
+                        },
+                        enabled = manualName.isNotBlank() &&
+                            manualLat.isNotBlank() && manualLng.isNotBlank(),
+                        modifier = Modifier.align(Alignment.End)
+                    ) { Text("Simpan") }
+                }
 
                 HorizontalDivider()
 
@@ -1347,21 +1454,13 @@ private fun FavoriteDialog(
                         list.forEach { item ->
                             FavRow(
                                 item = item,
-                                editing = editingId == item.id,
-                                editName = editingName,
-                                onEditNameChange = { editingName = it },
-                                onStartEdit = {
+                                onEdit = {
                                     editingId = item.id
                                     editingName = item.name
+                                    editingLat = String.format(Locale.US, "%.6f", item.lat)
+                                    editingLng = String.format(Locale.US, "%.6f", item.lng)
                                 },
-                                onSaveEdit = {
-                                    if (editingName.isNotBlank()) {
-                                        onRename(tab, item.id, editingName)
-                                    }
-                                    editingId = null
-                                },
-                                onCancelEdit = { editingId = null },
-                                onRequestDelete = { deleteTarget = item },
+                                onDelete = { deleteTarget = item },
                                 onClick = { onFlyTo(LatLng(item.lat, item.lng)) }
                             )
                         }
@@ -1427,67 +1526,49 @@ private fun FavTabChip(
 @Composable
 private fun FavRow(
     item: FavItem,
-    editing: Boolean,
-    editName: String,
-    onEditNameChange: (String) -> Unit,
-    onStartEdit: () -> Unit,
-    onSaveEdit: () -> Unit,
-    onCancelEdit: () -> Unit,
-    onRequestDelete: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
     onClick: () -> Unit
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (editing) {
-            OutlinedTextField(
-                value = editName,
-                onValueChange = onEditNameChange,
-                singleLine = true,
-                modifier = Modifier.weight(1f)
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(onClick = onClick)
+                .padding(vertical = 4.dp)
+        ) {
+            Text(
+                text = item.name,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-            TextButton(onClick = onSaveEdit, enabled = editName.isNotBlank()) {
-                Text("Simpan")
-            }
-            TextButton(onClick = onCancelEdit) { Text("Batal") }
-        } else {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable(onClick = onClick)
-                    .padding(vertical = 4.dp)
-            ) {
-                Text(
-                    text = item.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = formatLatLng(LatLng(item.lat, item.lng)),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            IconButton(onClick = onStartEdit) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_edit),
-                    contentDescription = "Edit ${item.name}",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-            IconButton(onClick = onRequestDelete) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_delete),
-                    contentDescription = "Hapus ${item.name}",
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
+            Text(
+                text = formatLatLng(LatLng(item.lat, item.lng)),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        IconButton(onClick = onEdit) {
+            Icon(
+                painter = painterResource(R.drawable.ic_edit),
+                contentDescription = "Edit ${item.name}",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        IconButton(onClick = onDelete) {
+            Icon(
+                painter = painterResource(R.drawable.ic_delete),
+                contentDescription = "Hapus ${item.name}",
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }

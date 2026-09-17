@@ -52,6 +52,8 @@ import kotlin.math.roundToInt
 //   - Clamp saat jari dilepas & saat ukuran berubah -> panel tidak
 //     pernah tertinggal di luar layar
 //   - Rotate vertikal <-> horizontal (tombol 🔄)
+//       * Saat panel TERKUNCI (🔒): rotate NONAKTIF (tidak bisa di-tap)
+//       * Saat panel UNLOCK (🔓): rotate AKTIF kembali
 //   - 🔒 dan 🔄 digabung dalam SATU KOLOM (ControlStack)
 // Orientation-aware: isi panel sama, wadah Column/Row yang berganti.
 // =====================================================================
@@ -223,7 +225,7 @@ private fun MultiPanelContent(
     MultiDivider(horizontal)
     MultiGap(8, horizontal)
 
-    // 🔒 + 🔄 dalam 1 kolom
+    // 🔒 + 🔄 dalam 1 kolom (rotate nonaktif saat terkunci)
     ControlStack(
         locked = locked,
         onLockedChange = onLockedChange,
@@ -272,7 +274,8 @@ private fun MultiItem(
     }
 }
 
-// Kontrol panel dalam 1 kolom: lock/unlock di atas, rotate di bawah
+// Kontrol panel dalam 1 kolom: lock/unlock di atas, rotate di bawah.
+// Saat panel TERKUNCI, tombol rotate dinonaktifkan.
 @Composable
 private fun ControlStack(
     locked: Boolean,
@@ -282,7 +285,10 @@ private fun ControlStack(
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         LockButton(locked = locked, onToggle = { onLockedChange(!locked) })
         Spacer(Modifier.height(4.dp))
-        OrientationButton(onClick = onToggleOrientation)
+        OrientationButton(
+            enabled = !locked, // rotate hanya bisa di-tap saat unlock
+            onClick = onToggleOrientation
+        )
     }
 }
 
@@ -316,17 +322,23 @@ private fun MultiGap(dps: Int, horizontal: Boolean) {
     }
 }
 
-// Tombol rotate orientasi
+// Tombol rotate orientasi — nonaktif (redup) saat panel terkunci
 @Composable
-private fun OrientationButton(onClick: () -> Unit) {
+private fun OrientationButton(
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
     IconButton(
         onClick = onClick,
+        enabled = enabled,
         modifier = Modifier.size(28.dp)
     ) {
         Icon(
             painter = painterResource(R.drawable.ic_swap),
-            contentDescription = "Ubah orientasi panel",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            contentDescription = if (enabled) "Ubah orientasi panel"
+            else "Buka kunci untuk mengubah orientasi",
+            tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
             modifier = Modifier.size(16.dp)
         )
     }

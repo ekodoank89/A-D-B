@@ -21,6 +21,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,7 +56,7 @@ import kotlinx.coroutines.launch
 // Implementasi UI tiap panel ada di file terpisah:
 //   MapConstants.kt, MapPrefs.kt, FavoriteStore.kt, MapPermissions.kt,
 //   MarkerIcons.kt, CoordinatePanel.kt, PlayControlPanel.kt,
-//   UtilityPanel.kt, FavoriteDialog.kt
+//   UtilityPanel.kt, FavoriteDialog.kt, MultiPlayPanel.kt
 // =====================================================================
 
 // Key persistensi posisi kamera
@@ -136,6 +137,24 @@ fun MapScreen(modifier: Modifier = Modifier) {
     var showFavDialog by remember { mutableStateOf(false) }
     var grbFavs by remember { mutableStateOf(FavStore.loadList(prefs, FavTab.GRB)) }
     var gjkFavs by remember { mutableStateOf(FavStore.loadList(prefs, FavTab.GJK)) }
+
+    // ===== Contoh: panel 5 tombol play/stop — PERSISTEN =====
+    var multiPlaying by remember {
+        mutableStateOf(
+            (prefs.getString("multi_playing", "0,0,0,0,0") ?: "0,0,0,0,0")
+                .split(",").map { it == "1" }
+        )
+    }
+    var multiHorizontal by rememberPersistentBoolean("multi_horizontal", false)
+    var multiLocked by rememberPersistentBoolean("multi_locked", false)
+    var multiDrag by rememberPersistentOffset("multi_drag", Offset.Zero)
+
+    // Simpan status play panel contoh tiap berubah (tahan force stop)
+    SideEffect {
+        prefs.edit()
+            .putString("multi_playing", multiPlaying.joinToString(",") { if (it) "1" else "0" })
+            .apply()
+    }
 
     // ===== Simpan posisi kamera tiap berubah (throttle 1 detik) =====
     LaunchedEffect(cameraPositionState) {
@@ -301,7 +320,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
     MaterialTheme(colorScheme = colorScheme) {
         Box(modifier = modifier.fillMaxSize()) {
 
-            // ===== Google Map full width + marker GRB/GJK (tanpa marker favorite) =====
+            // ===== Google Map full width + marker GRB/GJK =====
             GoogleMap(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
@@ -398,7 +417,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                     .padding(bottom = 16.dp)
             )
 
-            // ===== Panel utilitas icon-only (moveable + lock, posisi persisten) =====
+            // ===== Panel utilitas icon-only (moveable + lock) =====
             UtilityPanel(
                 darkMode = darkMode,
                 onAutoFocus = { autoFocus() },
@@ -413,6 +432,24 @@ fun MapScreen(modifier: Modifier = Modifier) {
                     .align(Alignment.BottomEnd)
                     .navigationBarsPadding()
                     .padding(end = 16.dp, bottom = 16.dp)
+            )
+
+            // ===== Contoh: panel 5 tombol play/stop (moveable + lock + rotate) =====
+            MultiPlayPanel(
+                playing = multiPlaying,
+                onToggle = { i ->
+                    multiPlaying = multiPlaying.mapIndexed { idx, v -> if (idx == i) !v else v }
+                },
+                horizontal = multiHorizontal,
+                onToggleOrientation = { multiHorizontal = !multiHorizontal },
+                locked = multiLocked,
+                onLockedChange = { multiLocked = it },
+                dragOffset = multiDrag,
+                onDragOffsetChange = { multiDrag = it },
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .navigationBarsPadding()
+                    .padding(start = 16.dp, bottom = 16.dp)
             )
 
             // ===== Dialog Favorite =====

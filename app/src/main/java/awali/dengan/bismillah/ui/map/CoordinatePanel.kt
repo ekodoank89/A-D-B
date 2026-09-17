@@ -28,22 +28,30 @@ import awali.dengan.bismillah.R
 import com.google.android.gms.maps.model.LatLng
 
 // =====================================================================
-// Panel chip koordinat (PIN + GRB + GJK) — wrap-content + IntrinsicSize.Max
-// Tap PIN = collapse; tap GRB/GJK = fly ke marker
-// Icon chip GRB = pin MERAH, GJK = pin BIRU (penuh saat play, redup saat stop)
+// Panel chip koordinat — 5 baris:
+//   PIN         : koordinat pin tengah layar (live) — tap = collapse
+//   GRB         : koordinat PUSAT GRB (terkunci saat PLAY)  — tap = fly
+//   Jitter GRB  : koordinat jitter GRB (pin kecil, bergerak) — tap = fly
+//   GJK         : koordinat PUSAT GJK (terkunci saat PLAY)  — tap = fly
+//   Jitter GJK  : koordinat jitter GJK (pin kecil, bergerak) — tap = fly
+// Panel wrap-content (lebar = chip terlebar, IntrinsicSize.Max)
 // =====================================================================
 
 @Composable
 internal fun CoordinatePanel(
     pinCoord: LatLng,
-    grbCoord: LatLng?,
+    grbCoord: LatLng?,          // pusat GRB (anchor)
+    grbJitterCoord: LatLng?,    // posisi jitter GRB (bergerak)
     grbPlaying: Boolean,
-    gjkCoord: LatLng?,
+    gjkCoord: LatLng?,          // pusat GJK (anchor)
+    gjkJitterCoord: LatLng?,    // posisi jitter GJK (bergerak)
     gjkPlaying: Boolean,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     onGrbChipClick: () -> Unit,
+    onGrbJitterChipClick: () -> Unit,
     onGjkChipClick: () -> Unit,
+    onGjkJitterChipClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (expanded) {
@@ -61,6 +69,7 @@ internal fun CoordinatePanel(
                     .padding(horizontal = 10.dp, vertical = 6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                // ===== Chip PIN — tap = collapse =====
                 ChipRow(
                     leading = {
                         Icon(
@@ -82,6 +91,7 @@ internal fun CoordinatePanel(
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                 )
 
+                // ===== Chip GRB — pusat (terkunci saat PLAY) =====
                 ChipRow(
                     leading = {
                         Icon(
@@ -104,6 +114,30 @@ internal fun CoordinatePanel(
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                 )
 
+                // ===== Chip Jitter GRB — posisi bergerak =====
+                ChipRow(
+                    leading = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_jitter),
+                            contentDescription = null,
+                            tint = if (grbPlaying) GRB_RED else GRB_RED.copy(alpha = 0.4f),
+                            modifier = Modifier.size(13.dp)
+                        )
+                    },
+                    label = "Jitter GRB",
+                    text = formatCoord(grbJitterCoord),
+                    enabled = grbJitterCoord != null,
+                    onClick = onGrbJitterChipClick
+                )
+
+                HorizontalDivider(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                )
+
+                // ===== Chip GJK — pusat (terkunci saat PLAY) =====
                 ChipRow(
                     leading = {
                         Icon(
@@ -117,6 +151,29 @@ internal fun CoordinatePanel(
                     text = formatCoord(gjkCoord),
                     enabled = gjkCoord != null,
                     onClick = onGjkChipClick
+                )
+
+                HorizontalDivider(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                )
+
+                // ===== Chip Jitter GJK — posisi bergerak =====
+                ChipRow(
+                    leading = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_jitter),
+                            contentDescription = null,
+                            tint = if (gjkPlaying) GJK_BLUE else GJK_BLUE.copy(alpha = 0.4f),
+                            modifier = Modifier.size(13.dp)
+                        )
+                    },
+                    label = "Jitter GJK",
+                    text = formatCoord(gjkJitterCoord),
+                    enabled = gjkJitterCoord != null,
+                    onClick = onGjkJitterChipClick
                 )
             }
         }

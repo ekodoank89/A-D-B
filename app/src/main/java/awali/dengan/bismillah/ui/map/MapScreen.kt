@@ -144,7 +144,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
     // ===== Contoh: panel 5 tombol play/stop — PERSISTEN =====
     var multiPlaying by remember {
         mutableStateOf(
-            (prefs.getString("multi_playing", "0,0,0,0,0") ?: "0,0,0,0,0")
+            (prefs.getString("multi_playing", "0,0,0,0") ?: "0,0,0,0")
                 .split(",").map { it == "1" }
         )
     }

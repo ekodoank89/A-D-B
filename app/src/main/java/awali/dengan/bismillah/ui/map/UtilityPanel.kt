@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -42,10 +43,13 @@ import awali.dengan.bismillah.R
 import kotlin.math.roundToInt
 
 // =====================================================================
-// Panel utilitas — ICON-ONLY, vertikal:
-//   [Autofocus+Kompas] -> [Terang/Gelap] -> [lock] -> [+] -> [-]
-// Movable (drag bebas) + lock — clamp saat jari dilepas & saat ukuran
-// layar/panel berubah (bukan saat drag).
+// Panel utilitas — ICON-ONLY:
+//   [🎯 Autofocus+Kompas] [☀️ Terang/Gelap] [kolom 🔒+🔄] [＋] [－]
+//   - Rotate vertikal <-> horizontal (tombol 🔄)
+//       * Saat panel TERKUNCI (🔒): rotate NONAKTIF (redup, tidak bisa di-tap)
+//       * Saat panel UNLOCK (🔓): rotate AKTIF kembali
+//   - Movable (drag bebas) + lock — clamp saat jari dilepas & saat
+//     ukuran layar/panel berubah (bukan saat drag)
 // =====================================================================
 
 // Delta koreksi agar panel (di posisi panelPos) masuk ke dalam layar.
@@ -74,6 +78,8 @@ internal fun UtilityPanel(
     onToggleDark: () -> Unit,
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
+    horizontal: Boolean,             // false = vertikal, true = horizontal
+    onToggleOrientation: () -> Unit,
     locked: Boolean,
     onLockedChange: (Boolean) -> Unit,
     dragOffset: Offset,
@@ -142,53 +148,156 @@ internal fun UtilityPanel(
             else MaterialTheme.colorScheme.outlineVariant
         )
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // 1. Autofocus + Kompas (icon saja)
-            UtilityButton(
-                iconRes = R.drawable.ic_my_location,
-                contentDesc = "Autofocus & Normalisasi Map",
-                active = false,
-                onClick = onAutoFocus
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            // 2. Terang/Gelap (icon saja)
-            UtilityButton(
-                iconRes = R.drawable.ic_brightness,
-                contentDesc = "Terang/Gelap",
-                active = darkMode,
-                onClick = onToggleDark
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            // 3. Lock/unlock movable panel ini
-            LockButton(locked = locked, onToggle = { onLockedChange(!locked) })
-
-            Spacer(Modifier.height(8.dp))
-
-            // 4. Zoom In (icon +, tap = langsung zoom maksimal)
-            UtilityButton(
-                iconRes = R.drawable.ic_plus,
-                contentDesc = "Zoom In",
-                active = false,
-                onClick = onZoomIn
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            // 5. Zoom Out (icon -, mundur 2 level)
-            UtilityButton(
-                iconRes = R.drawable.ic_minus,
-                contentDesc = "Zoom Out",
-                active = false,
-                onClick = onZoomOut
-            )
+        if (horizontal) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                UtilityPanelItems(
+                    horizontal = true,
+                    darkMode = darkMode,
+                    onAutoFocus = onAutoFocus,
+                    onToggleDark = onToggleDark,
+                    onZoomIn = onZoomIn,
+                    onZoomOut = onZoomOut,
+                    locked = locked,
+                    onLockedChange = onLockedChange,
+                    onToggleOrientation = onToggleOrientation
+                )
+            }
+        } else {
+            Column(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                UtilityPanelItems(
+                    horizontal = false,
+                    darkMode = darkMode,
+                    onAutoFocus = onAutoFocus,
+                    onToggleDark = onToggleDark,
+                    onZoomIn = onZoomIn,
+                    onZoomOut = onZoomOut,
+                    locked = locked,
+                    onLockedChange = onLockedChange,
+                    onToggleOrientation = onToggleOrientation
+                )
+            }
         }
+    }
+}
+
+// =====================================================================
+// Isi panel — ditulis SEKALI, dipakai Column (vertikal) & Row (horizontal):
+//   [🎯] [☀️] [kolom 🔒+🔄] [＋] [－]
+// =====================================================================
+
+@Composable
+private fun UtilityPanelItems(
+    horizontal: Boolean,
+    darkMode: Boolean,
+    onAutoFocus: () -> Unit,
+    onToggleDark: () -> Unit,
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit,
+    locked: Boolean,
+    onLockedChange: (Boolean) -> Unit,
+    onToggleOrientation: () -> Unit
+) {
+    // 1. Autofocus + Kompas
+    UtilityButton(
+        iconRes = R.drawable.ic_my_location,
+        contentDesc = "Autofocus & Normalisasi Map",
+        active = false,
+        onClick = onAutoFocus
+    )
+
+    PanelGap(8, horizontal)
+
+    // 2. Terang/Gelap
+    UtilityButton(
+        iconRes = R.drawable.ic_brightness,
+        contentDesc = "Terang/Gelap",
+        active = darkMode,
+        onClick = onToggleDark
+    )
+
+    PanelGap(8, horizontal)
+
+    // 3. 🔒 + 🔄 dalam 1 kolom (rotate nonaktif saat terkunci)
+    ControlStack(
+        locked = locked,
+        onLockedChange = onLockedChange,
+        onToggleOrientation = onToggleOrientation
+    )
+
+    PanelGap(8, horizontal)
+
+    // 4. Zoom In (tap = langsung zoom maksimal)
+    UtilityButton(
+        iconRes = R.drawable.ic_plus,
+        contentDesc = "Zoom In",
+        active = false,
+        onClick = onZoomIn
+    )
+
+    PanelGap(8, horizontal)
+
+    // 5. Zoom Out (mundur 2 level)
+    UtilityButton(
+        iconRes = R.drawable.ic_minus,
+        contentDesc = "Zoom Out",
+        active = false,
+        onClick = onZoomOut
+    )
+}
+
+// Spacer orientation-aware: height saat vertikal, width saat horizontal
+@Composable
+private fun PanelGap(dps: Int, horizontal: Boolean) {
+    if (horizontal) {
+        Spacer(Modifier.width(dps.dp))
+    } else {
+        Spacer(Modifier.height(dps.dp))
+    }
+}
+
+// Kontrol panel dalam 1 kolom: lock/unlock di atas, rotate di bawah.
+// Saat panel TERKUNCI, tombol rotate dinonaktifkan.
+@Composable
+private fun ControlStack(
+    locked: Boolean,
+    onLockedChange: (Boolean) -> Unit,
+    onToggleOrientation: () -> Unit
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        LockButton(locked = locked, onToggle = { onLockedChange(!locked) })
+        Spacer(Modifier.height(4.dp))
+        OrientationButton(
+            enabled = !locked, // rotate hanya bisa di-tap saat unlock
+            onClick = onToggleOrientation
+        )
+    }
+}
+
+// Tombol rotate orientasi — nonaktif (redup) saat panel terkunci
+@Composable
+private fun OrientationButton(
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(28.dp)
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_swap),
+            contentDescription = if (enabled) "Ubah orientasi panel"
+            else "Buka kunci untuk mengubah orientasi",
+            tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+            modifier = Modifier.size(16.dp)
+        )
     }
 }
 

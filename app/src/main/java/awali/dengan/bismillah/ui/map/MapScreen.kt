@@ -1340,11 +1340,7 @@ private fun FavoriteDialog(
                         },
                         modifier = Modifier.align(Alignment.End)
                     ) { Text("Update") }
-                } else {
-                    // ================= Accordion: Dari Pin / Manual =================
-
-                    // --- Header "Dari Pin" (tap = buka form pin, tutup manual) ---
-                    SectionHeader(
+                }                     SectionHeader(
                         title = "Dari Pin",
                         active = section == "PIN",
                         onClick = {
@@ -1355,105 +1351,7 @@ private fun FavoriteDialog(
 
                     if (section == "PIN") {
                         Spacer(Modifier.height(6.dp))
-                        OutlinedTextField(
-                            value = pinName,
-                            onValueChange = { pinName = it },
-                            label = { Text("Nama Favorite") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        // Latitude OTOMATIS dari pin tengah (read-only)
-                        OutlinedTextField(
-                            value = String.format(Locale.US, "%.6f", currentPin.latitude),
-                            onValueChange = {},
-                            label = { Text("Latitude") },
-                            readOnly = true,
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        // Longitude OTOMATIS dari pin tengah (read-only)
-                        OutlinedTextField(
-                            value = String.format(Locale.US, "%.6f", currentPin.longitude),
-                            onValueChange = {},
-                            label = { Text("Longitude") },
-                            readOnly = true,
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        TextButton(
-                            onClick = {
-                                onAdd(tab, pinName, currentPin)
-                                pinName = ""
-                            },
-                            enabled = pinName.isNotBlank(),
-                            modifier = Modifier.align(Alignment.End)
-                        ) { Text("Simpan") }
-                    }
-
-                    Spacer(Modifier.height(4.dp))
-
-                    // --- Header "Manual" (tap = buka form manual, tutup pin) ---
-                    SectionHeader(
-                        title = "Manual",
-                        active = section == "MANUAL",
-                        onClick = {
-                            section = "MANUAL"
-                            FavStore.saveLastSection(prefs, "MANUAL")
-                        }
-                    )
-
-                    if (section == "MANUAL") {
-                        Spacer(Modifier.height(6.dp))
-                        OutlinedTextField(
-                            value = manualName,
-                            onValueChange = { manualName = it },
-                            label = { Text("Nama Favorite") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        OutlinedTextField(
-                            value = manualLat,
-                            onValueChange = { manualLat = it },
-                            label = { Text("Latitude") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        OutlinedTextField(
-                            value = manualLng,
-                            onValueChange = { manualLng = it },
-                            label = { Text("Longitude") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        TextButton(
-                            onClick = {
-                                val lat = manualLat.trim().toDoubleOrNull()
-                                val lng = manualLng.trim().toDoubleOrNull()
-                                if (manualName.isBlank() || lat == null || lng == null ||
-                                    lat < -90.0 || lat > 90.0 || lng < -180.0 || lng > 180.0
-                                ) {
-                                    Toast.makeText(
-                                        context,
-                                        "Data tidak valid. Periksa nama & koordinat.",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                } else {
-                                    onAdd(tab, manualName, LatLng(lat, lng))
-                                    manualName = ""
-                                    manualLat = ""
-                                    manualLng = ""
-                                }
-                            },
-                            enabled = manualName.isNotBlank() &&
-                                manualLat.isNotBlank() && manualLng.isNotBlank(),
-                            modifier = Modifier.align(Alignment.End)
-                        ) { Text("Simpan") }
-                    }
-                }
+                        OutlinedT
 
                 HorizontalDivider()
 

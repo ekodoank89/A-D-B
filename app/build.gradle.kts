@@ -24,8 +24,8 @@ android {
         applicationId = "awali.dengan.bismillah"
         minSdk = 30    // Android 11
         targetSdk = 35 // Android 15
-        versionCode = 20
-        versionName = "2.5.1"
+        versionCode = 22
+        versionName = "2.6.0"
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
     }
 

@@ -239,7 +239,8 @@ private fun MultiItem(
     playing: Boolean,
     onClick: () -> Unit
 ) {
-    val accent = MULTI_COLORS[index]
+        // Guard: jika index melebihi palet (harusnya tidak), pakai abu agar tidak crash
+    val accent = MULTI_COLORS.getOrElse(index) { Color(0xFF757575) }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Surface(
             modifier = Modifier

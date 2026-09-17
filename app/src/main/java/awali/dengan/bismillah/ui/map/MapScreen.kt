@@ -20,7 +20,6 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,10 +56,10 @@ import kotlinx.coroutines.launch
 // Implementasi UI tiap panel ada di file terpisah:
 //   MapConstants.kt, MapPrefs.kt, FavoriteStore.kt, MapPermissions.kt,
 //   MarkerIcons.kt, CoordinatePanel.kt, PlayControlPanel.kt,
-//   UtilityPanel.kt, FavoriteDialog.kt, MultiPlayPanel.kt
+//   UtilityPanel.kt, FavoriteDialog.kt
 // Semua panel moveable menerima screenSize untuk clamp posisi drag
 // agar tidak pernah keluar dari tampilan layar.
-// Panel utama & utilitas juga bisa di-rotate (vertikal <-> horizontal),
+// Panel utama & utilitas bisa di-rotate (vertikal <-> horizontal),
 // state orientasinya persisten. Rotate nonaktif saat panel terkunci.
 // =====================================================================
 
@@ -146,25 +145,6 @@ fun MapScreen(modifier: Modifier = Modifier) {
     var showFavDialog by remember { mutableStateOf(false) }
     var grbFavs by remember { mutableStateOf(FavStore.loadList(prefs, FavTab.GRB)) }
     var gjkFavs by remember { mutableStateOf(FavStore.loadList(prefs, FavTab.GJK)) }
-
-    // ===== Contoh: panel 4 tombol play/stop — PERSISTEN =====
-    var multiPlaying by remember {
-        // Parsing aman: maksimal 4 nilai + pad false jika kurang
-        // -> selalu List<Boolean> ukuran 4 (data lama tidak bikin crash)
-        val parsed = (prefs.getString("multi_playing", "0,0,0,0") ?: "0,0,0,0")
-            .split(",").take(4).map { it == "1" }
-        mutableStateOf(List(4) { i -> parsed.getOrNull(i) ?: false })
-    }
-    var multiHorizontal by rememberPersistentBoolean("multi_horizontal", false)
-    var multiLocked by rememberPersistentBoolean("multi_locked", false)
-    var multiDrag by rememberPersistentOffset("multi_drag", Offset.Zero)
-
-    // Simpan status play panel contoh tiap berubah (tahan force stop)
-    SideEffect {
-        prefs.edit()
-            .putString("multi_playing", multiPlaying.joinToString(",") { if (it) "1" else "0" })
-            .apply()
-    }
 
     // ===== Ukuran layar (px) — dipakai panel moveable untuk clamp =====
     var screenSize by remember { mutableStateOf(IntSize.Zero) }
@@ -456,25 +436,6 @@ fun MapScreen(modifier: Modifier = Modifier) {
                     .align(Alignment.BottomEnd)
                     .navigationBarsPadding()
                     .padding(end = 16.dp, bottom = 16.dp)
-            )
-
-            // ===== Contoh: panel 4 tombol play/stop (rotate + moveable + lock) =====
-            MultiPlayPanel(
-                playing = multiPlaying,
-                onToggle = { i ->
-                    multiPlaying = multiPlaying.mapIndexed { idx, v -> if (idx == i) !v else v }
-                },
-                horizontal = multiHorizontal,
-                onToggleOrientation = { multiHorizontal = !multiHorizontal },
-                locked = multiLocked,
-                onLockedChange = { multiLocked = it },
-                dragOffset = multiDrag,
-                onDragOffsetChange = { multiDrag = it },
-                screenSize = screenSize,
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .navigationBarsPadding()
-                    .padding(start = 16.dp, bottom = 16.dp)
             )
 
             // ===== Dialog Favorite =====

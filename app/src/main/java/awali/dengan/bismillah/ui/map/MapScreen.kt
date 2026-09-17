@@ -65,6 +65,8 @@ import kotlinx.coroutines.launch
 //   - Marker KECIL (pin kecil, seperti icon chip koordinat) = posisi
 //     jitter yang BERGERAK tiap jendela (interval) sejauh langkah,
 //     dibatasi radius maks dari pusat
+//   - Kunci loop memuat config -> perubahan slider di dialog langsung
+//     berlaku (chip koordinat jitter ter-update sesuai interval kini)
 // Konfigurasi per-tab diatur lewat dialog (tombol 🎲) dan persisten.
 // =====================================================================
 
@@ -132,6 +134,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
     var gjkCoord by rememberPersistentLatLng("gjk_coord")
 
     // ===== Konfigurasi jitter per tab — PERSISTEN (via JitterStore) =====
+    // Di-lift: dialog mengubah state ini via callback -> loop langsung ikut
     var grbJitterCfg by remember { mutableStateOf(loadJitterConfig(prefs, FavTab.GRB)) }
     var gjkJitterCfg by remember { mutableStateOf(loadJitterConfig(prefs, FavTab.GJK)) }
 
@@ -230,8 +233,10 @@ fun MapScreen(modifier: Modifier = Modifier) {
     //   - anchor (marker utama) = pusat, TETAP di tempat
     //   - grbCoord (marker kecil) bergerak tiap jendela sejauh langkah,
     //     dibatasi radius maks dari anchor
+    //   - Kunci memuat grbJitterCfg -> perubahan interval/langkah/radius
+    //     langsung berlaku (loop restart, posisi lanjut dari titik kini)
     // ==================================================================
-    LaunchedEffect(grbPlaying) {
+    LaunchedEffect(grbPlaying, grbJitterCfg) {
         if (!grbPlaying) return@LaunchedEffect
         val anchor = grbAnchor ?: return@LaunchedEffect
         var current = grbCoord ?: anchor
@@ -243,7 +248,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
     }
 
     // JITTER LOOP — GJK (sama, konfigurasi terpisah)
-    LaunchedEffect(gjkPlaying) {
+    LaunchedEffect(gjkPlaying, gjkJitterCfg) {
         if (!gjkPlaying) return@LaunchedEffect
         val anchor = gjkAnchor ?: return@LaunchedEffect
         var current = gjkCoord ?: anchor
@@ -419,7 +424,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
             // ===== Pin HIJAU tetap di tengah layar =====
             CenterPin(modifier = Modifier.align(Alignment.Center))
 
-                        // ===== Panel chip koordinat: PIN + GRB + JitterGRB + GJK + JitterGJK =====
+            // ===== Panel chip koordinat: PIN + GRB + JitterGRB + GJK + JitterGJK =====
             CoordinatePanel(
                 pinCoord = target,
                 grbCoord = grbAnchor,
@@ -527,11 +532,22 @@ fun MapScreen(modifier: Modifier = Modifier) {
                 )
             }
 
-            // ===== Dialog Jitter =====
+            // ===== Dialog Jitter (config di-lift: slider langsung
+            //       mengubah state loop jitter + tersimpan) =====
             if (showJitterDialog) {
                 JitterDialog(
-                    prefs = prefs,
                     initialTab = loadJitterLastTab(prefs),
+                    grbCfg = grbJitterCfg,
+                    gjkCfg = gjkJitterCfg,
+                    onGrbCfgChange = { cfg ->
+                        grbJitterCfg = cfg
+                        saveJitterConfig(prefs, FavTab.GRB, cfg)
+                    },
+                    onGjkCfgChange = { cfg ->
+                        gjkJitterCfg = cfg
+                        saveJitterConfig(prefs, FavTab.GJK, cfg)
+                    },
+                    onTabChange = { saveJitterLastTab(prefs, it) },
                     onDismiss = { showJitterDialog = false }
                 )
             }

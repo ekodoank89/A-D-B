@@ -32,7 +32,7 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 --decode > "$GITHUB_WORKSPACE/app/adb-release.jks"
           ls -la "$GITHUB_WORKSPACE/app/adb-release.jks"
 
-      - name: Build release APKs (app + testapp)
+      - name: Build release APK
         env:
           MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}

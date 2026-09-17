@@ -22,24 +22,33 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import awali.dengan.bismillah.R
 import kotlin.math.roundToInt
 
 // =====================================================================
 // CONTOH: Panel 5 tombol PLAY/STOP (label 1..5) dalam 1 kontainer.
-//   - Movable (drag) + lock/unlock (LockButton dari UtilityPanel.kt)
+//   - Movable (drag) + lock/unlock — DRAG DI-CLAMP agar panel tidak
+//     pernah keluar dari tampilan layar (margin 16dp)
 //   - Rotate vertikal <-> horizontal (tombol 🔄 di ujung panel)
 //   - Setiap tombol punya warna aktif sendiri saat playing
 // Orientation-aware: isi panel sama, wadah Column/Row yang berganti.
@@ -54,6 +63,27 @@ private val MULTI_COLORS = listOf(
     Color(0xFF8E24AA)  // 5 ungu
 )
 
+// Hitung delta drag yang sudah di-clamp agar panel tetap dalam layar.
+// panelPos = posisi panel saat ini di window (px).
+private fun clampedDragDelta(
+    panelPos: Offset,
+    drag: Offset,
+    panelSize: IntSize,
+    screenSize: IntSize,
+    marginPx: Float
+): Offset {
+    if (screenSize.width <= 0 || screenSize.height <= 0 ||
+        panelSize.width <= 0 || panelSize.height <= 0
+    ) return drag
+    val minX = marginPx
+    val maxX = (screenSize.width - panelSize.width - marginPx).toFloat()
+    val minY = marginPx
+    val maxY = (screenSize.height - panelSize.height - marginPx).toFloat()
+    val targetX = (panelPos.x + drag.x).coerceIn(minX, maxX)
+    val targetY = (panelPos.y + drag.y).coerceIn(minY, maxY)
+    return Offset(targetX - panelPos.x, targetY - panelPos.y)
+}
+
 @Composable
 internal fun MultiPlayPanel(
     playing: List<Boolean>,          // 5 status play/stop (index 0..4)
@@ -64,19 +94,41 @@ internal fun MultiPlayPanel(
     onLockedChange: (Boolean) -> Unit,
     dragOffset: Offset,
     onDragOffsetChange: (Offset) -> Unit,
+    screenSize: IntSize,             // ukuran layar px (dari MapScreen)
     modifier: Modifier = Modifier
 ) {
     val currentDragOffset by rememberUpdatedState(dragOffset)
     val currentLocked by rememberUpdatedState(locked)
 
+    // Ukuran & posisi panel sendiri (diukur saat layout)
+    var panelSize by remember { mutableStateOf(IntSize.Zero) }
+    var panelPos by remember { mutableStateOf(Offset.Zero) }
+
+    val marginPx = with(LocalDensity.current) { 16.dp.toPx() }
+
+    // Safety net: koreksi posisi bila panel di luar batas
+    // (mis. setelah rotate — ukuran panel berubah)
+    LaunchedEffect(panelPos, panelSize, screenSize) {
+        val delta = clampedDragDelta(panelPos, Offset.Zero, panelSize, screenSize, marginPx)
+        if (delta != Offset.Zero) {
+            onDragOffsetChange(currentDragOffset + delta)
+        }
+    }
+
     Surface(
         modifier = modifier
             .offset { IntOffset(currentDragOffset.x.roundToInt(), currentDragOffset.y.roundToInt()) }
+            .onGloballyPositioned { panelPos = it.positionInWindow() }
+            .onSizeChanged { panelSize = it }
             .pointerInput(Unit) {
                 detectDragGestures { change, dragAmount ->
                     change.consume()
                     if (!currentLocked) {
-                        onDragOffsetChange(currentDragOffset + dragAmount)
+                        onDragOffsetChange(
+                            clampedDragDelta(
+                                panelPos, dragAmount, panelSize, screenSize, marginPx
+                            )
+                        )
                     }
                 }
             },

@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -19,6 +20,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,9 +48,12 @@ import kotlin.math.roundToInt
 
 // =====================================================================
 // Panel tombol utama — favorite MEMBUKA DIALOG (bukan toggle marker).
-// Urutan: [▶GRB] [GRB] [sep] [GJK] [▶GJK] [sep] [lock] [sep] [⭐] [sep] [Jitter]
-// Movable (drag bebas) + lock — clamp saat jari dilepas & saat ukuran
-// layar/panel berubah (bukan saat drag).
+//   [▶GRB][GRB] sep [GJK][▶GJK] sep [kolom 🔒+🔄] sep [⭐] sep [🎲]
+//   - Rotate vertikal <-> horizontal (tombol 🔄)
+//       * Saat panel TERKUNCI (🔒): rotate NONAKTIF (redup, tidak bisa di-tap)
+//       * Saat panel UNLOCK (🔓): rotate AKTIF kembali
+//   - Movable (drag bebas) + lock — clamp saat jari dilepas & saat
+//     ukuran layar/panel berubah (bukan saat drag)
 // =====================================================================
 
 // Delta koreksi agar panel (di posisi panelPos) masuk ke dalam layar.
@@ -80,6 +85,8 @@ internal fun PlayControlPanel(
     onFavClick: () -> Unit,
     jitterEnabled: Boolean,
     onJitterToggle: () -> Unit,
+    horizontal: Boolean,             // false = vertikal, true = horizontal
+    onToggleOrientation: () -> Unit,
     locked: Boolean,
     onLockedChange: (Boolean) -> Unit,
     dragOffset: Offset,
@@ -148,103 +155,250 @@ internal fun PlayControlPanel(
             else MaterialTheme.colorScheme.outlineVariant
         )
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // 1. Tombol play/stop GRB
+        if (horizontal) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                PlayPanelItems(
+                    horizontal = true,
+                    grbPlaying = grbPlaying,
+                    gjkPlaying = gjkPlaying,
+                    onGrbToggle = onGrbToggle,
+                    onGjkToggle = onGjkToggle,
+                    favActive = favActive,
+                    onFavClick = onFavClick,
+                    jitterEnabled = jitterEnabled,
+                    onJitterToggle = onJitterToggle,
+                    locked = locked,
+                    onLockedChange = onLockedChange,
+                    onToggleOrientation = onToggleOrientation
+                )
+            }
+        } else {
+            Column(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                PlayPanelItems(
+                    horizontal = false,
+                    grbPlaying = grbPlaying,
+                    gjkPlaying = gjkPlaying,
+                    onGrbToggle = onGrbToggle,
+                    onGjkToggle = onGjkToggle,
+                    favActive = favActive,
+                    onFavClick = onFavClick,
+                    jitterEnabled = jitterEnabled,
+                    onJitterToggle = onJitterToggle,
+                    locked = locked,
+                    onLockedChange = onLockedChange,
+                    onToggleOrientation = onToggleOrientation
+                )
+            }
+        }
+    }
+}
+
+// =====================================================================
+// Isi panel — ditulis SEKALI, dipakai Column (vertikal) & Row (horizontal):
+//   [▶GRB][GRB] sep [GJK][▶GJK] sep [kolom 🔒+🔄] sep [⭐] sep [🎲]
+// =====================================================================
+
+@Composable
+private fun PlayPanelItems(
+    horizontal: Boolean,
+    grbPlaying: Boolean,
+    gjkPlaying: Boolean,
+    onGrbToggle: () -> Unit,
+    onGjkToggle: () -> Unit,
+    favActive: Boolean,
+    onFavClick: () -> Unit,
+    jitterEnabled: Boolean,
+    onJitterToggle: () -> Unit,
+    locked: Boolean,
+    onLockedChange: (Boolean) -> Unit,
+    onToggleOrientation: () -> Unit
+) {
+    // 1. GRB (tombol lalu label)
+    PlayLabeledItem(
+        horizontal = horizontal,
+        labelFirst = false,
+        button = {
             PlayCircleButton(
                 playing = grbPlaying,
                 activeColor = GRB_RED,
                 contentDesc = if (grbPlaying) "Stop GRB" else "Play GRB",
                 onClick = onGrbToggle
             )
+        },
+        label = { PlayLabel(text = "GRB", playing = grbPlaying, activeColor = GRB_RED) }
+    )
 
-            Spacer(Modifier.height(5.dp))
+    PanelGap(8, horizontal)
+    PanelOrientDivider(horizontal)
+    PanelGap(8, horizontal)
 
-            // 2. Label GRB
-            PlayLabel(text = "GRB", playing = grbPlaying, activeColor = GRB_RED)
-
-            Spacer(Modifier.height(8.dp))
-
-            // 3. Separator
-            PanelDivider()
-
-            Spacer(Modifier.height(8.dp))
-
-            // 4. Label GJK
-            PlayLabel(text = "GJK", playing = gjkPlaying, activeColor = GJK_BLUE)
-
-            Spacer(Modifier.height(5.dp))
-
-            // 5. Tombol play/stop GJK
+    // 2. GJK (label lalu tombol)
+    PlayLabeledItem(
+        horizontal = horizontal,
+        labelFirst = true,
+        button = {
             PlayCircleButton(
                 playing = gjkPlaying,
                 activeColor = GJK_BLUE,
                 contentDesc = if (gjkPlaying) "Stop GJK" else "Play GJK",
                 onClick = onGjkToggle
             )
+        },
+        label = { PlayLabel(text = "GJK", playing = gjkPlaying, activeColor = GJK_BLUE) }
+    )
 
-            Spacer(Modifier.height(8.dp))
+    PanelGap(8, horizontal)
+    PanelOrientDivider(horizontal)
+    PanelGap(8, horizontal)
 
-            // 6. Separator
-            PanelDivider()
+    // 3. 🔒 + 🔄 dalam 1 kolom (rotate nonaktif saat terkunci)
+    ControlStack(
+        locked = locked,
+        onLockedChange = onLockedChange,
+        onToggleOrientation = onToggleOrientation
+    )
 
-            Spacer(Modifier.height(8.dp))
+    PanelGap(8, horizontal)
+    PanelOrientDivider(horizontal)
+    PanelGap(8, horizontal)
 
-            // 7. Tombol lock/unlock movable
-            LockButton(locked = locked, onToggle = { onLockedChange(!locked) })
+    // 4. Favorite — icon BINTANG EMAS
+    UtilityButton(
+        iconRes = R.drawable.ic_star,
+        contentDesc = "Buka menu favorite",
+        active = favActive,
+        activeColor = FAV_GOLD.copy(alpha = 0.25f),
+        iconTint = FAV_GOLD,
+        size = 46.dp,
+        iconSize = 22.dp,
+        onClick = onFavClick
+    )
 
-            Spacer(Modifier.height(8.dp))
+    PanelGap(8, horizontal)
+    PanelOrientDivider(horizontal)
+    PanelGap(8, horizontal)
 
-            // 8. Separator
-            PanelDivider()
+    // 5. Jitter
+    UtilityButton(
+        iconRes = R.drawable.ic_jitter,
+        contentDesc = if (jitterEnabled) "Jitter aktif" else "Jitter nonaktif",
+        active = jitterEnabled,
+        size = 46.dp,
+        iconSize = 22.dp,
+        onClick = onJitterToggle
+    )
+}
 
-            Spacer(Modifier.height(8.dp))
-
-            // 9. Tombol Favorite — icon BINTANG EMAS
-            UtilityButton(
-                iconRes = R.drawable.ic_star,
-                contentDesc = "Buka menu favorite",
-                active = favActive,
-                activeColor = FAV_GOLD.copy(alpha = 0.25f),
-                iconTint = FAV_GOLD,
-                size = 46.dp,
-                iconSize = 22.dp,
-                onClick = onFavClick
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            // 10. Separator
-            PanelDivider()
-
-            Spacer(Modifier.height(8.dp))
-
-            // 11. Tombol Jitter
-            UtilityButton(
-                iconRes = R.drawable.ic_jitter,
-                contentDesc = if (jitterEnabled) "Jitter aktif" else "Jitter nonaktif",
-                active = jitterEnabled,
-                size = 46.dp,
-                iconSize = 22.dp,
-                onClick = onJitterToggle
-            )
+// Item tombol + label: vertikal = tumpuk, horizontal = berdampingan
+// labelFirst = true -> label di atas/samping kiri (urutan GJK)
+@Composable
+private fun PlayLabeledItem(
+    horizontal: Boolean,
+    labelFirst: Boolean,
+    button: @Composable () -> Unit,
+    label: @Composable () -> Unit
+) {
+    if (horizontal) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (labelFirst) {
+                label()
+                Spacer(Modifier.width(5.dp))
+                button()
+            } else {
+                button()
+                Spacer(Modifier.width(5.dp))
+                label()
+            }
+        }
+    } else {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (labelFirst) {
+                label()
+                Spacer(Modifier.height(5.dp))
+                button()
+            } else {
+                button()
+                Spacer(Modifier.height(5.dp))
+                label()
+            }
         }
     }
 }
 
-// =====================================================================
-// Separator sempit — lebar seukuran tombol play (46dp)
-// =====================================================================
-
+// Spacer orientation-aware: height saat vertikal, width saat horizontal
 @Composable
-internal fun PanelDivider() {
-    HorizontalDivider(
-        modifier = Modifier.width(46.dp),
-        thickness = 1.dp,
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-    )
+private fun PanelGap(dps: Int, horizontal: Boolean) {
+    if (horizontal) {
+        Spacer(Modifier.width(dps.dp))
+    } else {
+        Spacer(Modifier.height(dps.dp))
+    }
+}
+
+// Separator orientation-aware:
+//   vertikal   -> garis mendatar 46dp
+//   horizontal -> garis tegak tinggi 46dp
+@Composable
+private fun PanelOrientDivider(horizontal: Boolean) {
+    if (horizontal) {
+        VerticalDivider(
+            modifier = Modifier.height(46.dp),
+            thickness = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+        )
+    } else {
+        HorizontalDivider(
+            modifier = Modifier.width(46.dp),
+            thickness = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+        )
+    }
+}
+
+// Kontrol panel dalam 1 kolom: lock/unlock di atas, rotate di bawah.
+// Saat panel TERKUNCI, tombol rotate dinonaktifkan.
+@Composable
+private fun ControlStack(
+    locked: Boolean,
+    onLockedChange: (Boolean) -> Unit,
+    onToggleOrientation: () -> Unit
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        LockButton(locked = locked, onToggle = { onLockedChange(!locked) })
+        Spacer(Modifier.height(4.dp))
+        OrientationButton(
+            enabled = !locked, // rotate hanya bisa di-tap saat unlock
+            onClick = onToggleOrientation
+        )
+    }
+}
+
+// Tombol rotate orientasi — nonaktif (redup) saat panel terkunci
+@Composable
+private fun OrientationButton(
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(28.dp)
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_swap),
+            contentDescription = if (enabled) "Ubah orientasi panel"
+            else "Buka kunci untuk mengubah orientasi",
+            tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+            modifier = Modifier.size(16.dp)
+        )
+    }
 }
 
 @Composable

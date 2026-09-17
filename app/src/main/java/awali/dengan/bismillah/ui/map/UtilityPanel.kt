@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -50,6 +51,7 @@ import kotlin.math.roundToInt
 //       * Saat panel UNLOCK (🔓): rotate AKTIF kembali
 //   - Movable (drag bebas) + lock — clamp saat jari dilepas & saat
 //     ukuran layar/panel berubah (bukan saat drag)
+// Orientation-aware: isi panel sama, wadah Column/Row yang berganti.
 // =====================================================================
 
 // Delta koreksi agar panel (di posisi panelPos) masuk ke dalam layar.

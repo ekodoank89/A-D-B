@@ -48,6 +48,8 @@ import java.util.Locale
 //  - 2 baris tab (persisten):
 //      baris 1: GRB / GJK           (list favorite terpisah per tab)
 //      baris 2: Dari Pin / Manual   (form aktif; pilihan tersimpan)
+//  - Warna tab Dari Pin/Manual mengikuti warna tab GRB/GJK aktif:
+//      GRB -> merah, GJK -> biru
 //  - Form "Dari Pin": nama manual, Latitude & Longitude OTOMATIS
 //    terisi dari pin tengah (read-only) -> Tombol Simpan
 //  - Form "Manual": nama + latitude + longitude manual -> Tombol Simpan
@@ -111,30 +113,26 @@ internal fun FavoriteDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                                        // Warna tab Dari Pin/Manual mengikuti tab GRB/GJK aktif:
-                    // GRB -> merah, GJK -> biru
-                    val sectionActiveColor = when (tab) {
-                        FavTab.GRB -> GRB_RED
-                        FavTab.GJK -> GJK_BLUE
-                    }
                     FavTabChip(
-                        label = "Dari Pin",
-                        active = section == "PIN",
-                        activeColor = sectionActiveColor,
+                        label = "GRB",
+                        active = tab == FavTab.GRB,
+                        activeColor = GRB_RED,
                         modifier = Modifier.weight(1f),
                         onClick = {
-                            section = "PIN"
-                            FavStore.saveLastSection(prefs, "PIN")
+                            tab = FavTab.GRB
+                            cancelEdit()
+                            FavStore.saveLastTab(prefs, FavTab.GRB)
                         }
                     )
                     FavTabChip(
-                        label = "Manual",
-                        active = section == "MANUAL",
-                        activeColor = sectionActiveColor,
+                        label = "GJK",
+                        active = tab == FavTab.GJK,
+                        activeColor = GJK_BLUE,
                         modifier = Modifier.weight(1f),
                         onClick = {
-                            section = "MANUAL"
-                            FavStore.saveLastSection(prefs, "MANUAL")
+                            tab = FavTab.GJK
+                            cancelEdit()
+                            FavStore.saveLastTab(prefs, FavTab.GJK)
                         }
                     )
                 }
@@ -142,6 +140,12 @@ internal fun FavoriteDialog(
                 Spacer(Modifier.height(8.dp))
 
                 // ===== Baris tab 2: Dari Pin / Manual =====
+                // Warna aktif mengikuti tab GRB/GJK yang dipilih:
+                // GRB -> merah, GJK -> biru
+                val sectionActiveColor = when (tab) {
+                    FavTab.GRB -> GRB_RED
+                    FavTab.GJK -> GJK_BLUE
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -149,7 +153,7 @@ internal fun FavoriteDialog(
                     FavTabChip(
                         label = "Dari Pin",
                         active = section == "PIN",
-                        activeColor = MaterialTheme.colorScheme.primary,
+                        activeColor = sectionActiveColor,
                         modifier = Modifier.weight(1f),
                         onClick = {
                             section = "PIN"
@@ -159,7 +163,7 @@ internal fun FavoriteDialog(
                     FavTabChip(
                         label = "Manual",
                         active = section == "MANUAL",
-                        activeColor = MaterialTheme.colorScheme.primary,
+                        activeColor = sectionActiveColor,
                         modifier = Modifier.weight(1f),
                         onClick = {
                             section = "MANUAL"

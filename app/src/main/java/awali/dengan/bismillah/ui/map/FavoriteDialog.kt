@@ -53,7 +53,8 @@ import java.util.Locale
 //  - Warna tab Dari Pin/Manual mengikuti warna tab GRB/GJK aktif:
 //      GRB -> merah, GJK -> biru
 //  - Tombol aksi berwarna:
-//      Simpan = hijau, Update = biru, Hapus = merah, Batal/Tutup = abu
+//      Simpan = hijau, Update = biru,
+//      dialog hapus: Hapus = merah, Batal = abu, Tutup = abu teks
 //  - Form "Dari Pin": nama manual, Latitude & Longitude OTOMATIS
 //    terisi dari pin tengah (read-only) -> Tombol Simpan
 //  - Form "Manual": nama + latitude + longitude manual -> Tombol Simpan
@@ -67,6 +68,7 @@ import java.util.Locale
 private val BTN_SAVE_GREEN = Color(0xFF2E7D32)   // Simpan
 private val BTN_UPDATE_BLUE = Color(0xFF1E88E5)  // Update
 private val BTN_DELETE_RED = Color(0xFFC62828)   // Hapus
+private val BTN_CANCEL_GRAY = Color(0xFF616161)  // Batal
 
 @Composable
 internal fun FavoriteDialog(
@@ -394,25 +396,25 @@ internal fun FavoriteDialog(
             title = { Text("Hapus favorite?") },
             text = { Text("\"${target.name}\" akan dihapus permanen.") },
             confirmButton = {
-                TextButton(onClick = {
-                    onDelete(tab, target.id)
-                    deleteTarget = null
-                }) {
-                    Text(
-                        "Hapus",
-                        color = BTN_DELETE_RED, // merah tegas
-                        fontWeight = FontWeight.Bold
+                Button(
+                    onClick = {
+                        onDelete(tab, target.id)
+                        deleteTarget = null
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = BTN_DELETE_RED, // merah
+                        contentColor = Color.White
                     )
-                }
+                ) { Text("Hapus", fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) {
-                    Text(
-                        "Batal",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, // abu netral
-                        fontWeight = FontWeight.SemiBold
+                Button(
+                    onClick = { deleteTarget = null },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = BTN_CANCEL_GRAY, // abu
+                        contentColor = Color.White
                     )
-                }
+                ) { Text("Batal") }
             }
         )
     }

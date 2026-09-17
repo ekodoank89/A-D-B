@@ -60,8 +60,7 @@ private val MULTI_COLORS = listOf(
     Color(0xFFE53935), // 1 merah
     Color(0xFF1E88E5), // 2 biru
     Color(0xFF2E7D32), // 3 hijau
-    Color(0xFFF57C00), // 4 oranye
-    Color(0xFF8E24AA)  // 5 ungu
+    Color(0xFFF57C00)  // 4 oranye
 )
 
 // Delta koreksi agar panel (di posisi panelPos) masuk ke dalam layar.

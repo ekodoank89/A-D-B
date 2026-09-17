@@ -47,11 +47,13 @@ import awali.dengan.bismillah.R
 import kotlin.math.roundToInt
 
 // =====================================================================
-// Panel tombol utama — favorite MEMBUKA DIALOG (bukan toggle marker).
+// Panel tombol utama — favorite & jitter MEMBUKA DIALOG.
 //   [▶GRB][GRB] sep [GJK][▶GJK] sep [kolom 🔒+🔄] sep [⭐] sep [🎲]
 //   - Rotate vertikal <-> horizontal (tombol 🔄)
 //       * Saat panel TERKUNCI (🔒): rotate NONAKTIF (redup, tidak bisa di-tap)
 //       * Saat panel UNLOCK (🔓): rotate AKTIF kembali
+//   - 🎲 menyala saat jitter aktif di salah satu tab (PLAY otomatis
+//     atau manual)
 //   - Movable (drag bebas) + lock — clamp saat jari dilepas & saat
 //     ukuran layar/panel berubah (bukan saat drag)
 // =====================================================================
@@ -83,8 +85,8 @@ internal fun PlayControlPanel(
     onGjkToggle: () -> Unit,
     favActive: Boolean,
     onFavClick: () -> Unit,
-    jitterEnabled: Boolean,
-    onJitterToggle: () -> Unit,
+    jitterActive: Boolean,
+    onJitterClick: () -> Unit,
     horizontal: Boolean,             // false = vertikal, true = horizontal
     onToggleOrientation: () -> Unit,
     locked: Boolean,
@@ -168,8 +170,8 @@ internal fun PlayControlPanel(
                     onGjkToggle = onGjkToggle,
                     favActive = favActive,
                     onFavClick = onFavClick,
-                    jitterEnabled = jitterEnabled,
-                    onJitterToggle = onJitterToggle,
+                    jitterActive = jitterActive,
+                    onJitterClick = onJitterClick,
                     locked = locked,
                     onLockedChange = onLockedChange,
                     onToggleOrientation = onToggleOrientation
@@ -188,8 +190,8 @@ internal fun PlayControlPanel(
                     onGjkToggle = onGjkToggle,
                     favActive = favActive,
                     onFavClick = onFavClick,
-                    jitterEnabled = jitterEnabled,
-                    onJitterToggle = onJitterToggle,
+                    jitterActive = jitterActive,
+                    onJitterClick = onJitterClick,
                     locked = locked,
                     onLockedChange = onLockedChange,
                     onToggleOrientation = onToggleOrientation
@@ -213,8 +215,8 @@ private fun PlayPanelItems(
     onGjkToggle: () -> Unit,
     favActive: Boolean,
     onFavClick: () -> Unit,
-    jitterEnabled: Boolean,
-    onJitterToggle: () -> Unit,
+    jitterActive: Boolean,
+    onJitterClick: () -> Unit,
     locked: Boolean,
     onLockedChange: (Boolean) -> Unit,
     onToggleOrientation: () -> Unit
@@ -264,183 +266,4 @@ private fun PlayPanelItems(
         onToggleOrientation = onToggleOrientation
     )
 
-    PanelGap(8, horizontal)
-    PanelOrientDivider(horizontal)
-    PanelGap(8, horizontal)
-
-    // 4. Favorite — icon BINTANG EMAS
-    UtilityButton(
-        iconRes = R.drawable.ic_star,
-        contentDesc = "Buka menu favorite",
-        active = favActive,
-        activeColor = FAV_GOLD.copy(alpha = 0.25f),
-        iconTint = FAV_GOLD,
-        size = 46.dp,
-        iconSize = 22.dp,
-        onClick = onFavClick
-    )
-
-    PanelGap(8, horizontal)
-    PanelOrientDivider(horizontal)
-    PanelGap(8, horizontal)
-
-    // 5. Jitter
-    UtilityButton(
-        iconRes = R.drawable.ic_jitter,
-        contentDesc = if (jitterEnabled) "Jitter aktif" else "Jitter nonaktif",
-        active = jitterEnabled,
-        size = 46.dp,
-        iconSize = 22.dp,
-        onClick = onJitterToggle
-    )
-}
-
-// Item tombol + label: vertikal = tumpuk, horizontal = berdampingan
-// labelFirst = true -> label di atas/samping kiri (urutan GJK)
-@Composable
-private fun PlayLabeledItem(
-    horizontal: Boolean,
-    labelFirst: Boolean,
-    button: @Composable () -> Unit,
-    label: @Composable () -> Unit
-) {
-    if (horizontal) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (labelFirst) {
-                label()
-                Spacer(Modifier.width(5.dp))
-                button()
-            } else {
-                button()
-                Spacer(Modifier.width(5.dp))
-                label()
-            }
-        }
-    } else {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            if (labelFirst) {
-                label()
-                Spacer(Modifier.height(5.dp))
-                button()
-            } else {
-                button()
-                Spacer(Modifier.height(5.dp))
-                label()
-            }
-        }
-    }
-}
-
-// Spacer orientation-aware: height saat vertikal, width saat horizontal
-@Composable
-private fun PanelGap(dps: Int, horizontal: Boolean) {
-    if (horizontal) {
-        Spacer(Modifier.width(dps.dp))
-    } else {
-        Spacer(Modifier.height(dps.dp))
-    }
-}
-
-// Separator orientation-aware:
-//   vertikal   -> garis mendatar 46dp
-//   horizontal -> garis tegak tinggi 46dp
-@Composable
-private fun PanelOrientDivider(horizontal: Boolean) {
-    if (horizontal) {
-        VerticalDivider(
-            modifier = Modifier.height(46.dp),
-            thickness = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-        )
-    } else {
-        HorizontalDivider(
-            modifier = Modifier.width(46.dp),
-            thickness = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-        )
-    }
-}
-
-// Kontrol panel dalam 1 kolom: lock/unlock di atas, rotate di bawah.
-// Saat panel TERKUNCI, tombol rotate dinonaktifkan.
-@Composable
-private fun ControlStack(
-    locked: Boolean,
-    onLockedChange: (Boolean) -> Unit,
-    onToggleOrientation: () -> Unit
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        LockButton(locked = locked, onToggle = { onLockedChange(!locked) })
-        Spacer(Modifier.height(4.dp))
-        OrientationButton(
-            enabled = !locked, // rotate hanya bisa di-tap saat unlock
-            onClick = onToggleOrientation
-        )
-    }
-}
-
-// Tombol rotate orientasi — nonaktif (redup) saat panel terkunci
-@Composable
-private fun OrientationButton(
-    enabled: Boolean,
-    onClick: () -> Unit
-) {
-    IconButton(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = Modifier.size(28.dp)
-    ) {
-        Icon(
-            painter = painterResource(R.drawable.ic_swap),
-            contentDescription = if (enabled) "Ubah orientasi panel"
-            else "Buka kunci untuk mengubah orientasi",
-            tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
-            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-            modifier = Modifier.size(16.dp)
-        )
-    }
-}
-
-@Composable
-private fun PlayCircleButton(
-    playing: Boolean,
-    activeColor: Color,
-    contentDesc: String,
-    onClick: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .size(46.dp)
-            .clip(CircleShape)
-            .clickable(onClick = onClick),
-        shape = CircleShape,
-        color = if (playing) activeColor else MaterialTheme.colorScheme.primaryContainer,
-        shadowElevation = 2.dp
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                painter = painterResource(
-                    if (playing) R.drawable.ic_stop else R.drawable.ic_play
-                ),
-                contentDescription = contentDesc,
-                tint = if (playing) Color.White
-                else MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.size(22.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun PlayLabel(
-    text: String,
-    playing: Boolean,
-    activeColor: Color
-) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelSmall,
-        fontWeight = FontWeight.Bold,
-        color = if (playing) activeColor else MaterialTheme.colorScheme.onSurface
-    )
-}
+    PanelGap(8

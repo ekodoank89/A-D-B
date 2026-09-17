@@ -18,16 +18,22 @@ import com.google.android.gms.maps.model.BitmapDescriptorFactory
 //   1. MapsInitializer.initialize() (double-safety, sudah juga di MainActivity)
 //   2. runCatching: jika render bitmap gagal ->
 //   3. fallback ke defaultMarker bawaan Google
+// sizeDp = ukuran pin hasil render (default 34dp; pakai 18dp untuk
+// marker jitter kecil seperti icon di chip koordinat)
 // =====================================================================
 
 @Composable
-internal fun rememberPinMarkerIcon(tint: Color, fallbackHue: Float): BitmapDescriptor {
+internal fun rememberPinMarkerIcon(
+    tint: Color,
+    fallbackHue: Float,
+    sizeDp: Int = 34
+): BitmapDescriptor {
     val context = LocalContext.current
-    return remember(tint) {
+    return remember(tint, sizeDp) {
         runCatching {
             MapsInitializer.initialize(context.applicationContext)
             val density = context.resources.displayMetrics.density
-            val sizePx = (34 * density).toInt().coerceAtLeast(1)
+            val sizePx = (sizeDp * density).toInt().coerceAtLeast(1)
             val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
             val drawable = ContextCompat.getDrawable(context, R.drawable.ic_pin)!!

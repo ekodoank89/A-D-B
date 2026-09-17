@@ -60,6 +60,8 @@ import kotlinx.coroutines.launch
 //   UtilityPanel.kt, FavoriteDialog.kt, MultiPlayPanel.kt
 // Semua panel moveable menerima screenSize untuk clamp posisi drag
 // agar tidak pernah keluar dari tampilan layar.
+// Panel utama & utilitas juga bisa di-rotate (vertikal <-> horizontal),
+// state orientasinya persisten. Rotate nonaktif saat panel terkunci.
 // =====================================================================
 
 // Key persistensi posisi kamera
@@ -133,6 +135,10 @@ fun MapScreen(modifier: Modifier = Modifier) {
     var utilLocked by rememberPersistentBoolean("util_locked", false)
     var utilDragOffset by rememberPersistentOffset("util_drag", Offset.Zero)
 
+    // ===== Orientasi panel (rotate) — PERSISTEN =====
+    var playHorizontal by rememberPersistentBoolean("play_horizontal", false)
+    var utilHorizontal by rememberPersistentBoolean("util_horizontal", false)
+
     // ===== First launch: pin otomatis ke titik biru (sekali saja) =====
     var firstLaunchDone by rememberPersistentBoolean("first_launch_done", false)
 
@@ -141,10 +147,10 @@ fun MapScreen(modifier: Modifier = Modifier) {
     var grbFavs by remember { mutableStateOf(FavStore.loadList(prefs, FavTab.GRB)) }
     var gjkFavs by remember { mutableStateOf(FavStore.loadList(prefs, FavTab.GJK)) }
 
-    // ===== Contoh: panel 5 tombol play/stop — PERSISTEN =====
-        var multiPlaying by remember {
+    // ===== Contoh: panel 4 tombol play/stop — PERSISTEN =====
+    var multiPlaying by remember {
         // Parsing aman: maksimal 4 nilai + pad false jika kurang
-        // -> selalu List<Boolean> ukuran 4 (data lama 5 nilai tidak bikin crash)
+        // -> selalu List<Boolean> ukuran 4 (data lama tidak bikin crash)
         val parsed = (prefs.getString("multi_playing", "0,0,0,0") ?: "0,0,0,0")
             .split(",").take(4).map { it == "1" }
         mutableStateOf(List(4) { i -> parsed.getOrNull(i) ?: false })
@@ -390,7 +396,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                     .padding(top = 4.dp)
             )
 
-            // ===== Panel tombol utama (favorite membuka dialog) =====
+            // ===== Panel tombol utama (rotate + favorite membuka dialog) =====
             PlayControlPanel(
                 grbPlaying = grbPlaying,
                 gjkPlaying = gjkPlaying,
@@ -419,6 +425,8 @@ fun MapScreen(modifier: Modifier = Modifier) {
                 onFavClick = { showFavDialog = true },
                 jitterEnabled = jitterEnabled,
                 onJitterToggle = { jitterEnabled = !jitterEnabled },
+                horizontal = playHorizontal,
+                onToggleOrientation = { playHorizontal = !playHorizontal },
                 locked = playLocked,
                 onLockedChange = { playLocked = it },
                 dragOffset = playDragOffset,
@@ -430,13 +438,15 @@ fun MapScreen(modifier: Modifier = Modifier) {
                     .padding(bottom = 16.dp)
             )
 
-            // ===== Panel utilitas icon-only (moveable + lock) =====
+            // ===== Panel utilitas icon-only (rotate + moveable + lock) =====
             UtilityPanel(
                 darkMode = darkMode,
                 onAutoFocus = { autoFocus() },
                 onToggleDark = { darkMode = !darkMode },
                 onZoomIn = { zoomInMax() },
                 onZoomOut = { zoomOut() },
+                horizontal = utilHorizontal,
+                onToggleOrientation = { utilHorizontal = !utilHorizontal },
                 locked = utilLocked,
                 onLockedChange = { utilLocked = it },
                 dragOffset = utilDragOffset,
@@ -448,7 +458,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                     .padding(end = 16.dp, bottom = 16.dp)
             )
 
-            // ===== Contoh: panel 5 tombol play/stop (moveable + lock + rotate) =====
+            // ===== Contoh: panel 4 tombol play/stop (rotate + moveable + lock) =====
             MultiPlayPanel(
                 playing = multiPlaying,
                 onToggle = { i ->

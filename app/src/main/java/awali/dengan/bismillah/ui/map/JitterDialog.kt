@@ -1,5 +1,6 @@
 package awali.dengan.bismillah.ui.map
 
+import android.content.SharedPreferences
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column

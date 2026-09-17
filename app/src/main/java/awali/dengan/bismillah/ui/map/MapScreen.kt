@@ -58,10 +58,14 @@ import kotlinx.coroutines.launch
 //   MapConstants.kt, MapPrefs.kt, FavoriteStore.kt, MapPermissions.kt,
 //   MarkerIcons.kt, CoordinatePanel.kt, PlayControlPanel.kt,
 //   UtilityPanel.kt, FavoriteDialog.kt, JitterStore.kt, JitterDialog.kt
-// Jitter: otomatis aktif saat GRB/GJK PLAY; koordinat bergerak tiap
-// jendela (interval) sejauh langkah, dibatasi radius maks yang diukur
-// dari TITIK AWAL (anchor) saat tombol PLAY ditekan. Konfigurasi
-// per-tab diatur lewat dialog (tombol 🎲) dan persisten.
+//
+// Jitter: saat GRB/GJK PLAY:
+//   - Marker UTAMA (pin besar) = TITIK PUSAT jitter — terkunci di
+//     titik saat PLAY, tidak bergerak
+//   - Marker KECIL (pin kecil, seperti icon chip koordinat) = posisi
+//     jitter yang BERGERAK tiap jendela (interval) sejauh langkah,
+//     dibatasi radius maks dari pusat
+// Konfigurasi per-tab diatur lewat dialog (tombol 🎲) dan persisten.
 // =====================================================================
 
 // Key persistensi posisi kamera
@@ -107,15 +111,23 @@ fun MapScreen(modifier: Modifier = Modifier) {
 
     val target = cameraPositionState.position.target
 
-    // Ikon marker pin-shape (aman: fallback defaultMarker)
-    val grbMarkerIcon = rememberPinMarkerIcon(GRB_RED, BitmapDescriptorFactory.HUE_RED)
-    val gjkMarkerIcon = rememberPinMarkerIcon(GJK_BLUE, BitmapDescriptorFactory.HUE_BLUE)
+    // ===== Ikon marker =====
+    // Marker utama (pusat): pin besar 34dp
+    val grbMarkerIcon = rememberPinMarkerIcon(GRB_RED, BitmapDescriptorFactory.HUE_RED, 34)
+    val gjkMarkerIcon = rememberPinMarkerIcon(GJK_BLUE, BitmapDescriptorFactory.HUE_BLUE, 34)
+    // Marker jitter (bergerak): pin KECIL 18dp — seperti icon di chip koordinat
+    val grbJitterIcon = rememberPinMarkerIcon(GRB_RED, BitmapDescriptorFactory.HUE_RED, 18)
+    val gjkJitterIcon = rememberPinMarkerIcon(GJK_BLUE, BitmapDescriptorFactory.HUE_BLUE, 18)
 
     // ===== Status play/stop — PERSISTEN =====
     var grbPlaying by rememberPersistentBoolean("grb_playing", false)
     var gjkPlaying by rememberPersistentBoolean("gjk_playing", false)
 
-    // ===== Koordinat TERKUNCI saat PLAY — PERSISTEN (bergerak oleh jitter) =====
+    // ===== ANCHOR (pusat jitter) — PERSISTEN, terkunci saat PLAY =====
+    var grbAnchor by rememberPersistentLatLng("grb_anchor")
+    var gjkAnchor by rememberPersistentLatLng("gjk_anchor")
+
+    // ===== Posisi jitter (bergerak) — PERSISTEN =====
     var grbCoord by rememberPersistentLatLng("grb_coord")
     var gjkCoord by rememberPersistentLatLng("gjk_coord")
 
@@ -215,14 +227,14 @@ fun MapScreen(modifier: Modifier = Modifier) {
     // ==================================================================
     // JITTER LOOP — GRB:
     //   - Aktif selama grbPlaying = true (jitter otomatis saat PLAY)
-    //   - anchor = TITIK AWAL saat PLAY -> radius maks diukur dari sini
-    //   - Tiap jendela (interval), koordinat bergerak sejauh langkah;
-    //     bila kandidat keluar radius, arah memantul ke dalam.
+    //   - anchor (marker utama) = pusat, TETAP di tempat
+    //   - grbCoord (marker kecil) bergerak tiap jendela sejauh langkah,
+    //     dibatasi radius maks dari anchor
     // ==================================================================
     LaunchedEffect(grbPlaying) {
         if (!grbPlaying) return@LaunchedEffect
-        val anchor = grbCoord ?: return@LaunchedEffect
-        var current = anchor
+        val anchor = grbAnchor ?: return@LaunchedEffect
+        var current = grbCoord ?: anchor
         while (true) {
             delay(grbJitterCfg.windowS * 1000L)
             current = nextJitterPosition(current, anchor, grbJitterCfg)
@@ -233,8 +245,8 @@ fun MapScreen(modifier: Modifier = Modifier) {
     // JITTER LOOP — GJK (sama, konfigurasi terpisah)
     LaunchedEffect(gjkPlaying) {
         if (!gjkPlaying) return@LaunchedEffect
-        val anchor = gjkCoord ?: return@LaunchedEffect
-        var current = anchor
+        val anchor = gjkAnchor ?: return@LaunchedEffect
+        var current = gjkCoord ?: anchor
         while (true) {
             delay(gjkJitterCfg.windowS * 1000L)
             current = nextJitterPosition(current, anchor, gjkJitterCfg)
@@ -346,7 +358,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                 .onSizeChanged { screenSize = it }
         ) {
 
-            // ===== Google Map full width + marker GRB/GJK =====
+            // ===== Google Map + marker pusat + marker jitter kecil =====
             GoogleMap(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
@@ -364,21 +376,41 @@ fun MapScreen(modifier: Modifier = Modifier) {
                     )
                 }
             ) {
-                // Marker GRB — posisi bergerak saat jitter loop aktif
-                grbCoord?.let { coord ->
+                // ===== GRB =====
+                // Marker UTAMA (pin besar) = pusat jitter — TERKUNCI saat PLAY
+                grbAnchor?.let { anchor ->
                     Marker(
-                        state = rememberMarkerState(key = "grb_$coord", position = coord),
-                        title = "GRB",
+                        state = rememberMarkerState(key = "grb_anchor_$anchor", position = anchor),
+                        title = "GRB (pusat)",
                         icon = grbMarkerIcon,
                         anchor = Offset(0.5f, 1.0f)
                     )
                 }
-                // Marker GJK — posisi bergerak saat jitter loop aktif
+                // Marker JITTER (pin kecil) = posisi bergerak
+                grbCoord?.let { coord ->
+                    Marker(
+                        state = rememberMarkerState(key = "grb_jitter_$coord", position = coord),
+                        title = "GRB (jitter)",
+                        icon = grbJitterIcon,
+                        anchor = Offset(0.5f, 1.0f)
+                    )
+                }
+                // ===== GJK =====
+                // Marker UTAMA (pin besar) = pusat jitter — TERKUNCI saat PLAY
+                gjkAnchor?.let { anchor ->
+                    Marker(
+                        state = rememberMarkerState(key = "gjk_anchor_$anchor", position = anchor),
+                        title = "GJK (pusat)",
+                        icon = gjkMarkerIcon,
+                        anchor = Offset(0.5f, 1.0f)
+                    )
+                }
+                // Marker JITTER (pin kecil) = posisi bergerak
                 gjkCoord?.let { coord ->
                     Marker(
-                        state = rememberMarkerState(key = "gjk_$coord", position = coord),
-                        title = "GJK",
-                        icon = gjkMarkerIcon,
+                        state = rememberMarkerState(key = "gjk_jitter_$coord", position = coord),
+                        title = "GJK (jitter)",
+                        icon = gjkJitterIcon,
                         anchor = Offset(0.5f, 1.0f)
                     )
                 }
@@ -388,6 +420,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
             CenterPin(modifier = Modifier.align(Alignment.Center))
 
             // ===== Panel chip koordinat: PIN + GRB + GJK =====
+            // Chip GRB/GJK menampilkan koordinat jitter (bergerak live)
             CoordinatePanel(
                 pinCoord = target,
                 grbCoord = grbCoord,
@@ -410,20 +443,27 @@ fun MapScreen(modifier: Modifier = Modifier) {
                 gjkPlaying = gjkPlaying,
                 onGrbToggle = {
                     if (!grbPlaying) {
-                        // PLAY: koordinat awal = pin tengah saat ini;
-                        // jitter GRB otomatis aktif (loop di atas mulai jalan)
-                        grbCoord = cameraPositionState.position.target
+                        // PLAY: kunci pusat jitter di pin tengah saat ini +
+                        // posisi jitter awal = pusat; jitter otomatis aktif
+                        val anchor = cameraPositionState.position.target
+                        grbAnchor = anchor
+                        grbCoord = anchor
                         grbPlaying = true
                     } else {
+                        // STOP: hapus marker pusat & jitter
+                        grbAnchor = null
                         grbCoord = null
                         grbPlaying = false
                     }
                 },
                 onGjkToggle = {
                     if (!gjkPlaying) {
-                        gjkCoord = cameraPositionState.position.target
+                        val anchor = cameraPositionState.position.target
+                        gjkAnchor = anchor
+                        gjkCoord = anchor
                         gjkPlaying = true
                     } else {
+                        gjkAnchor = null
                         gjkCoord = null
                         gjkPlaying = false
                     }

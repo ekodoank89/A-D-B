@@ -1,6 +1,5 @@
 package awali.dengan.bismillah.ui.map
 
-import android.content.SharedPreferences
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -34,8 +33,10 @@ import java.util.Locale
 
 // =====================================================================
 // Dialog Jitter:
-//  - 2 tab (GRB/GJK), konfigurasi TERPISAH per tab (persisten via
-//    JitterStore)
+//  - 2 tab (GRB/GJK), konfigurasi TERPISAH per tab
+//  - Konfigurasi di-LIFT ke parent (MapScreen): slider mengubah state
+//    parent via callback -> jitter loop langsung memakai nilai baru
+//    (chip koordinat jitter ter-update sesuai interval terkini)
 //  - Set Default: GRB = 2 m / 8 dtk / 3 m; GJK = 3 m / 5 dtk / 4 m
 //  - Slider Langkah per jendela : 0,5 - 8 m   (kelipatan 0,5)
 //  - Slider Jendela (interval)  : 1 - 15 dtk  (kelipatan 1)
@@ -45,13 +46,15 @@ import java.util.Locale
 
 @Composable
 internal fun JitterDialog(
-    prefs: SharedPreferences,
     initialTab: FavTab,
+    grbCfg: JitterConfig,
+    gjkCfg: JitterConfig,
+    onGrbCfgChange: (JitterConfig) -> Unit,
+    onGjkCfgChange: (JitterConfig) -> Unit,
+    onTabChange: (FavTab) -> Unit,
     onDismiss: () -> Unit
 ) {
     var tab by remember { mutableStateOf(initialTab) }
-    var grbCfg by remember { mutableStateOf(loadJitterConfig(prefs, FavTab.GRB)) }
-    var gjkCfg by remember { mutableStateOf(loadJitterConfig(prefs, FavTab.GJK)) }
 
     val cfg = if (tab == FavTab.GRB) grbCfg else gjkCfg
     val accent = if (tab == FavTab.GRB) GRB_RED else GJK_BLUE
@@ -59,11 +62,9 @@ internal fun JitterDialog(
 
     fun updateCfg(newCfg: JitterConfig) {
         if (tab == FavTab.GRB) {
-            grbCfg = newCfg
-            saveJitterConfig(prefs, FavTab.GRB, newCfg)
+            onGrbCfgChange(newCfg)
         } else {
-            gjkCfg = newCfg
-            saveJitterConfig(prefs, FavTab.GJK, newCfg)
+            onGjkCfgChange(newCfg)
         }
     }
 
@@ -84,7 +85,7 @@ internal fun JitterDialog(
                         modifier = Modifier.weight(1f)
                     ) {
                         tab = FavTab.GRB
-                        saveJitterLastTab(prefs, FavTab.GRB)
+                        onTabChange(FavTab.GRB)
                     }
                     JitterTabChip(
                         label = "GJK",
@@ -93,7 +94,7 @@ internal fun JitterDialog(
                         modifier = Modifier.weight(1f)
                     ) {
                         tab = FavTab.GJK
-                        saveJitterLastTab(prefs, FavTab.GJK)
+                        onTabChange(FavTab.GJK)
                     }
                 }
 

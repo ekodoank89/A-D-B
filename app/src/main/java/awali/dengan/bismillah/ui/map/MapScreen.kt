@@ -1,7 +1,6 @@
 package awali.dengan.bismillah.ui.map
 
 import android.content.Context
-import android.content.SharedPreferences
 import android.location.LocationManager
 import android.os.Build
 import android.widget.Toast
@@ -31,9 +30,11 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -57,6 +58,8 @@ import kotlinx.coroutines.launch
 //   MapConstants.kt, MapPrefs.kt, FavoriteStore.kt, MapPermissions.kt,
 //   MarkerIcons.kt, CoordinatePanel.kt, PlayControlPanel.kt,
 //   UtilityPanel.kt, FavoriteDialog.kt, MultiPlayPanel.kt
+// Semua panel moveable menerima screenSize untuk clamp posisi drag
+// agar tidak pernah keluar dari tampilan layar.
 // =====================================================================
 
 // Key persistensi posisi kamera
@@ -155,6 +158,9 @@ fun MapScreen(modifier: Modifier = Modifier) {
             .putString("multi_playing", multiPlaying.joinToString(",") { if (it) "1" else "0" })
             .apply()
     }
+
+    // ===== Ukuran layar (px) — dipakai panel moveable untuk clamp =====
+    var screenSize by remember { mutableStateOf(IntSize.Zero) }
 
     // ===== Simpan posisi kamera tiap berubah (throttle 1 detik) =====
     LaunchedEffect(cameraPositionState) {
@@ -318,7 +324,12 @@ fun MapScreen(modifier: Modifier = Modifier) {
     }
 
     MaterialTheme(colorScheme = colorScheme) {
-        Box(modifier = modifier.fillMaxSize()) {
+        // Ukuran layar diukur dari Box root — dipakai semua panel moveable
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .onSizeChanged { screenSize = it }
+        ) {
 
             // ===== Google Map full width + marker GRB/GJK =====
             GoogleMap(
@@ -411,6 +422,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                 onLockedChange = { playLocked = it },
                 dragOffset = playDragOffset,
                 onDragOffsetChange = { playDragOffset = it },
+                screenSize = screenSize,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
@@ -428,6 +440,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                 onLockedChange = { utilLocked = it },
                 dragOffset = utilDragOffset,
                 onDragOffsetChange = { utilDragOffset = it },
+                screenSize = screenSize,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .navigationBarsPadding()
@@ -446,6 +459,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                 onLockedChange = { multiLocked = it },
                 dragOffset = multiDrag,
                 onDragOffsetChange = { multiDrag = it },
+                screenSize = screenSize,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .navigationBarsPadding()

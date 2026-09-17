@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    name: Assemble Release APKs
+    name: Assemble Release APK
     runs-on: ubuntu-latest
 
     steps:

@@ -419,18 +419,21 @@ fun MapScreen(modifier: Modifier = Modifier) {
             // ===== Pin HIJAU tetap di tengah layar =====
             CenterPin(modifier = Modifier.align(Alignment.Center))
 
-            // ===== Panel chip koordinat: PIN + GRB + GJK =====
-            // Chip GRB/GJK menampilkan koordinat jitter (bergerak live)
+                        // ===== Panel chip koordinat: PIN + GRB + JitterGRB + GJK + JitterGJK =====
             CoordinatePanel(
                 pinCoord = target,
-                grbCoord = grbCoord,
+                grbCoord = grbAnchor,
+                grbJitterCoord = grbCoord,
                 grbPlaying = grbPlaying,
-                gjkCoord = gjkCoord,
+                gjkCoord = gjkAnchor,
+                gjkJitterCoord = gjkCoord,
                 gjkPlaying = gjkPlaying,
                 expanded = chipsExpanded,
                 onExpandedChange = { chipsExpanded = it },
-                onGrbChipClick = { grbCoord?.let { flyTo(it) } },
-                onGjkChipClick = { gjkCoord?.let { flyTo(it) } },
+                onGrbChipClick = { grbAnchor?.let { flyTo(it) } },
+                onGrbJitterChipClick = { grbCoord?.let { flyTo(it) } },
+                onGjkChipClick = { gjkAnchor?.let { flyTo(it) } },
+                onGjkJitterChipClick = { gjkCoord?.let { flyTo(it) } },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()

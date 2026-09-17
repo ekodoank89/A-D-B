@@ -47,7 +47,7 @@ import kotlin.math.roundToInt
 // Movable (drag) + lock — DRAG DI-CLAMP agar panel tidak keluar layar.
 // =====================================================================
 
-// Hitung delta drag yang sudah di-clamp agar panel tetap dalam layar.
+// Hitung delta drag yang sudah di-clamp agar panel tetap dalam layar (px).
 private fun clampedDragDelta(
     panelPos: Offset,
     drag: Offset,
@@ -107,8 +107,9 @@ internal fun UtilityPanel(
                 detectDragGestures { change, dragAmount ->
                     change.consume()
                     if (!currentLocked) {
+                        // AKUMULASI + clamp: offset baru = offset lama + delta ter-clamp
                         onDragOffsetChange(
-                            clampedDragDelta(
+                            currentDragOffset + clampedDragDelta(
                                 panelPos, dragAmount, panelSize, screenSize, marginPx
                             )
                         )

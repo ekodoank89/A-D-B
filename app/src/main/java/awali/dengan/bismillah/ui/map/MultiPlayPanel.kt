@@ -51,7 +51,6 @@ import kotlin.math.roundToInt
 //   - Movable (drag) + lock/unlock — DRAG DI-CLAMP agar panel tidak
 //     pernah keluar dari tampilan layar (margin 16dp)
 //   - Rotate vertikal <-> horizontal (tombol 🔄 di ujung panel)
-//   - Setiap tombol punya warna aktif sendiri saat playing
 // Orientation-aware: isi panel sama, wadah Column/Row yang berganti.
 // =====================================================================
 
@@ -64,8 +63,7 @@ private val MULTI_COLORS = listOf(
     Color(0xFF8E24AA)  // 5 ungu
 )
 
-// Hitung delta drag yang sudah di-clamp agar panel tetap dalam layar.
-// panelPos = posisi panel saat ini di window (px).
+// Hitung delta drag yang sudah di-clamp agar panel tetap dalam layar (px).
 private fun clampedDragDelta(
     panelPos: Offset,
     drag: Offset,
@@ -107,8 +105,7 @@ internal fun MultiPlayPanel(
 
     val marginPx = with(LocalDensity.current) { 16.dp.toPx() }
 
-    // Safety net: koreksi posisi bila panel di luar batas
-    // (mis. setelah rotate — ukuran panel berubah)
+    // Safety net: koreksi posisi bila panel di luar batas (mis. setelah rotate)
     LaunchedEffect(panelPos, panelSize, screenSize) {
         val delta = clampedDragDelta(panelPos, Offset.Zero, panelSize, screenSize, marginPx)
         if (delta != Offset.Zero) {
@@ -125,8 +122,9 @@ internal fun MultiPlayPanel(
                 detectDragGestures { change, dragAmount ->
                     change.consume()
                     if (!currentLocked) {
+                        // AKUMULASI + clamp: offset baru = offset lama + delta ter-clamp
                         onDragOffsetChange(
-                            clampedDragDelta(
+                            currentDragOffset + clampedDragDelta(
                                 panelPos, dragAmount, panelSize, screenSize, marginPx
                             )
                         )

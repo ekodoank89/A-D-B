@@ -1,5 +1,5 @@
 package awali.dengan.bismillah.ui.map
-import androidx.compose.ui.layout.positionInWindow
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -51,7 +51,7 @@ import kotlin.math.roundToInt
 // Movable (drag) + lock — DRAG DI-CLAMP agar panel tidak keluar layar.
 // =====================================================================
 
-// Hitung delta drag yang sudah di-clamp agar panel tetap dalam layar.
+// Hitung delta drag yang sudah di-clamp agar panel tetap dalam layar (px).
 private fun clampedDragDelta(
     panelPos: Offset,
     drag: Offset,
@@ -114,8 +114,9 @@ internal fun PlayControlPanel(
                 detectDragGestures { change, dragAmount ->
                     change.consume()
                     if (!currentLocked) {
+                        // AKUMULASI + clamp: offset baru = offset lama + delta ter-clamp
                         onDragOffsetChange(
-                            clampedDragDelta(
+                            currentDragOffset + clampedDragDelta(
                                 panelPos, dragAmount, panelSize, screenSize, marginPx
                             )
                         )

@@ -142,11 +142,12 @@ fun MapScreen(modifier: Modifier = Modifier) {
     var gjkFavs by remember { mutableStateOf(FavStore.loadList(prefs, FavTab.GJK)) }
 
     // ===== Contoh: panel 5 tombol play/stop — PERSISTEN =====
-    var multiPlaying by remember {
-        mutableStateOf(
-            (prefs.getString("multi_playing", "0,0,0,0") ?: "0,0,0,0")
-                .split(",").map { it == "1" }
-        )
+        var multiPlaying by remember {
+        // Parsing aman: maksimal 4 nilai + pad false jika kurang
+        // -> selalu List<Boolean> ukuran 4 (data lama 5 nilai tidak bikin crash)
+        val parsed = (prefs.getString("multi_playing", "0,0,0,0") ?: "0,0,0,0")
+            .split(",").take(4).map { it == "1" }
+        mutableStateOf(List(4) { i -> parsed.getOrNull(i) ?: false })
     }
     var multiHorizontal by rememberPersistentBoolean("multi_horizontal", false)
     var multiLocked by rememberPersistentBoolean("multi_locked", false)

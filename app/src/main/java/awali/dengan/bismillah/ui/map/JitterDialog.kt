@@ -1,6 +1,5 @@
 package awali.dengan.bismillah.ui.map
 
-import android.content.SharedPreferences
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -28,51 +27,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import java.util.Locale
 
 // =====================================================================
 // Dialog Jitter:
-//  - 2 tab (GRB/GJK), konfigurasi TERPISAH per tab (persisten)
+//  - 2 tab (GRB/GJK), konfigurasi TERPISAH per tab (persisten via
+//    JitterStore)
 //  - Set Default: GRB = 2 m / 8 dtk / 3 m; GJK = 3 m / 5 dtk / 4 m
 //  - Slider Langkah per jendela : 0,5 - 8 m   (kelipatan 0,5)
 //  - Slider Jendela (interval)  : 1 - 15 dtk  (kelipatan 1)
 //  - Slider Radius maksimal     : 0,5 - 10 m  (kelipatan 0,5)
 //  - Jitter otomatis aktif saat tombol GRB/GJK PLAY (di MapScreen)
 // =====================================================================
-
-private const val KEY_JITTER_GRB = "jitter_cfg_grb"
-private const val KEY_JITTER_GJK = "jitter_cfg_gjk"
-private const val KEY_JITTER_LAST_TAB = "jitter_last_tab"
-
-// Simpan config sebagai "step|window|radius"
-internal fun loadJitterConfig(prefs: SharedPreferences, tab: FavTab): JitterConfig {
-    val key = if (tab == FavTab.GRB) KEY_JITTER_GRB else KEY_JITTER_GJK
-    val raw = prefs.getString(key, null) ?: return if (tab == FavTab.GRB) {
-        JITTER_DEFAULT_GRB
-    } else {
-        JITTER_DEFAULT_GJK
-    }
-    return runCatching {
-        val p = raw.split("|")
-        JitterConfig(
-            stepM = p[0].toFloatOrNull() ?: 2f,
-            windowS = p[1].toIntOrNull() ?: 8,
-            radiusM = p[2].toFloatOrNull() ?: 3f
-        )
-    }.getOrDefault(if (tab == FavTab.GRB) JITTER_DEFAULT_GRB else JITTER_DEFAULT_GJK)
-}
-
-internal fun saveJitterConfig(prefs: SharedPreferences, tab: FavTab, cfg: JitterConfig) {
-    val key = if (tab == FavTab.GRB) KEY_JITTER_GRB else KEY_JITTER_GJK
-    prefs.edit().putString(key, "${cfg.stepM}|${cfg.windowS}|${cfg.radiusM}").apply()
-}
-
-internal fun loadJitterLastTab(prefs: SharedPreferences): FavTab =
-    if (prefs.getString(KEY_JITTER_LAST_TAB, "GRB") == "GJK") FavTab.GJK else FavTab.GRB
-
-internal fun saveJitterLastTab(prefs: SharedPreferences, tab: FavTab) {
-    prefs.edit().putString(KEY_JITTER_LAST_TAB, if (tab == FavTab.GJK) "GJK" else "GRB").apply()
-}
 
 @Composable
 internal fun JitterDialog(
@@ -149,15 +117,13 @@ internal fun JitterDialog(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = String.format(java.util.Locale.US, "%.1f m", cfg.stepM),
+                    text = String.format(Locale.US, "%.1f m", cfg.stepM),
                     style = MaterialTheme.typography.bodySmall,
                     color = accent
                 )
                 Slider(
                     value = stepToSlider(cfg.stepM),
-                    onValueChange = { v ->
-                        updateCfg(cfg.copy(stepM = sliderToStep(v)))
-                    },
+                    onValueChange = { v -> updateCfg(cfg.copy(stepM = sliderToStep(v))) },
                     valueRange = 0f..1f
                 )
 
@@ -176,9 +142,7 @@ internal fun JitterDialog(
                 )
                 Slider(
                     value = windowToSlider(cfg.windowS),
-                    onValueChange = { v ->
-                        updateCfg(cfg.copy(windowS = sliderToWindow(v)))
-                    },
+                    onValueChange = { v -> updateCfg(cfg.copy(windowS = sliderToWindow(v))) },
                     valueRange = 0f..1f
                 )
 
@@ -191,15 +155,13 @@ internal fun JitterDialog(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = String.format(java.util.Locale.US, "%.1f m", cfg.radiusM),
+                    text = String.format(Locale.US, "%.1f m", cfg.radiusM),
                     style = MaterialTheme.typography.bodySmall,
                     color = accent
                 )
                 Slider(
                     value = radiusToSlider(cfg.radiusM),
-                    onValueChange = { v ->
-                        updateCfg(cfg.copy(radiusM = sliderToRadius(v)))
-                    },
+                    onValueChange = { v -> updateCfg(cfg.copy(radiusM = sliderToRadius(v))) },
                     valueRange = 0f..1f
                 )
             }
@@ -237,10 +199,10 @@ private fun JitterTabChip(
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Bold,
             color = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
             modifier = Modifier
                 .padding(vertical = 8.dp)
-                .fillMaxWidth(),
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                .fillMaxWidth()
         )
     }
 }

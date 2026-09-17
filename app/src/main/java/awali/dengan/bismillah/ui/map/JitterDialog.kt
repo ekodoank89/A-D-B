@@ -1,6 +1,7 @@
 package awali.dengan.bismillah.ui.map
 
 import android.content.SharedPreferences
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,11 +9,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -22,47 +25,78 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import kotlin.math.roundToInt
 
 // =====================================================================
 // Dialog Jitter:
-//  - 2 tab (GRB / GJK), parameter terpisah & persisten per tab
-//  - Tombol Set Default (di bawah tab):
-//      GRB = 2 m / 8 dtk / 3 m,  GJK = 3 m / 5 dtk / 4 m
-//  - Slider (semua berkelipatan):
-//      Langkah per jendela : 0.5 .. 8 m   (x 0.5)
-//      Jendela (interval)  : 1 .. 15 dtk  (x 1)
-//      Radius maksimal     : 0.5 .. 10 m  (x 0.5)
-//  - Status efektif: otomatis via PLAY / manual / tidak aktif
-//  - Tombol AKTIF MANUAL di bagian BAWAH dialog:
-//      aktifkan jitter tanpa play (berlaku juga saat simpan
-//      favorite "Dari Pin")
+//  - 2 tab (GRB/GJK), konfigurasi TERPISAH per tab (persisten)
+//  - Set Default: GRB = 2 m / 8 dtk / 3 m; GJK = 3 m / 5 dtk / 4 m
+//  - Slider Langkah per jendela : 0,5 - 8 m   (kelipatan 0,5)
+//  - Slider Jendela (interval)  : 1 - 15 dtk  (kelipatan 1)
+//  - Slider Radius maksimal     : 0,5 - 10 m  (kelipatan 0,5)
+//  - Jitter otomatis aktif saat tombol GRB/GJK PLAY (di MapScreen)
 // =====================================================================
+
+private const val KEY_JITTER_GRB = "jitter_cfg_grb"
+private const val KEY_JITTER_GJK = "jitter_cfg_gjk"
+private const val KEY_JITTER_LAST_TAB = "jitter_last_tab"
+
+// Simpan config sebagai "step|window|radius"
+internal fun loadJitterConfig(prefs: SharedPreferences, tab: FavTab): JitterConfig {
+    val key = if (tab == FavTab.GRB) KEY_JITTER_GRB else KEY_JITTER_GJK
+    val raw = prefs.getString(key, null) ?: return if (tab == FavTab.GRB) {
+        JITTER_DEFAULT_GRB
+    } else {
+        JITTER_DEFAULT_GJK
+    }
+    return runCatching {
+        val p = raw.split("|")
+        JitterConfig(
+            stepM = p[0].toFloatOrNull() ?: 2f,
+            windowS = p[1].toIntOrNull() ?: 8,
+            radiusM = p[2].toFloatOrNull() ?: 3f
+        )
+    }.getOrDefault(if (tab == FavTab.GRB) JITTER_DEFAULT_GRB else JITTER_DEFAULT_GJK)
+}
+
+internal fun saveJitterConfig(prefs: SharedPreferences, tab: FavTab, cfg: JitterConfig) {
+    val key = if (tab == FavTab.GRB) KEY_JITTER_GRB else KEY_JITTER_GJK
+    prefs.edit().putString(key, "${cfg.stepM}|${cfg.windowS}|${cfg.radiusM}").apply()
+}
+
+internal fun loadJitterLastTab(prefs: SharedPreferences): FavTab =
+    if (prefs.getString(KEY_JITTER_LAST_TAB, "GRB") == "GJK") FavTab.GJK else FavTab.GRB
+
+internal fun saveJitterLastTab(prefs: SharedPreferences, tab: FavTab) {
+    prefs.edit().putString(KEY_JITTER_LAST_TAB, if (tab == FavTab.GJK) "GJK" else "GRB").apply()
+}
 
 @Composable
 internal fun JitterDialog(
     prefs: SharedPreferences,
-    grbPlaying: Boolean,
-    gjkPlaying: Boolean,
-    grbParams: JitterParams,
-    gjkParams: JitterParams,
-    grbManual: Boolean,
-    gjkManual: Boolean,
-    onDismiss: () -> Unit,
-    onParamsChange: (FavTab, JitterParams) -> Unit,
-    onSetDefault: (FavTab) -> Unit,
-    onManualChange: (FavTab, Boolean) -> Unit
+    initialTab: FavTab,
+    onDismiss: () -> Unit
 ) {
-    var tab by remember { mutableStateOf(FavTab.GRB) }
+    var tab by remember { mutableStateOf(initialTab) }
+    var grbCfg by remember { mutableStateOf(loadJitterConfig(prefs, FavTab.GRB)) }
+    var gjkCfg by remember { mutableStateOf(loadJitterConfig(prefs, FavTab.GJK)) }
 
-    val params = if (tab == FavTab.GRB) grbParams else gjkParams
-    val manual = if (tab == FavTab.GRB) grbManual else gjkManual
-    val playing = if (tab == FavTab.GRB) grbPlaying else gjkPlaying
-    val tabName = if (tab == FavTab.GRB) "GRB" else "GJK"
+    val cfg = if (tab == FavTab.GRB) grbCfg else gjkCfg
     val accent = if (tab == FavTab.GRB) GRB_RED else GJK_BLUE
+    val defaultCfg = if (tab == FavTab.GRB) JITTER_DEFAULT_GRB else JITTER_DEFAULT_GJK
+
+    fun updateCfg(newCfg: JitterConfig) {
+        if (tab == FavTab.GRB) {
+            grbCfg = newCfg
+            saveJitterConfig(prefs, FavTab.GRB, newCfg)
+        } else {
+            gjkCfg = newCfg
+            saveJitterConfig(prefs, FavTab.GJK, newCfg)
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -74,114 +108,100 @@ internal fun JitterDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    FavTabChip(
+                    JitterTabChip(
                         label = "GRB",
                         active = tab == FavTab.GRB,
                         activeColor = GRB_RED,
-                        modifier = Modifier.weight(1f),
-                        onClick = { tab = FavTab.GRB }
-                    )
-                    FavTabChip(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        tab = FavTab.GRB
+                        saveJitterLastTab(prefs, FavTab.GRB)
+                    }
+                    JitterTabChip(
                         label = "GJK",
                         active = tab == FavTab.GJK,
                         activeColor = GJK_BLUE,
-                        modifier = Modifier.weight(1f),
-                        onClick = { tab = FavTab.GJK }
-                    )
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        tab = FavTab.GJK
+                        saveJitterLastTab(prefs, FavTab.GJK)
+                    }
                 }
 
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(12.dp))
 
-                // ===== Tombol Set Default (di bawah tab) =====
-                OutlinedButton(
-                    onClick = { onSetDefault(tab) },
-                    modifier = Modifier.align(Alignment.End)
+                // ===== Set Default =====
+                Button(
+                    onClick = { updateCfg(defaultCfg) },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = accent,
+                        contentColor = Color.White
+                    ),
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
                 ) { Text("Set Default") }
+
+                Spacer(Modifier.height(12.dp))
+
+                // ===== Slider: Langkah per jendela (0,5 - 8 m, kelipatan 0,5) =====
+                Text(
+                    text = "Langkah per jendela",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = String.format(java.util.Locale.US, "%.1f m", cfg.stepM),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = accent
+                )
+                Slider(
+                    value = stepToSlider(cfg.stepM),
+                    onValueChange = { v ->
+                        updateCfg(cfg.copy(stepM = sliderToStep(v)))
+                    },
+                    valueRange = 0f..1f
+                )
 
                 Spacer(Modifier.height(4.dp))
 
-                // ===== Slider: Langkah per jendela (0.5..8, kelipatan 0.5) =====
+                // ===== Slider: Jendela (interval) (1 - 15 dtk, kelipatan 1) =====
                 Text(
-                    "Langkah per jendela: ${formatMeter(params.step)}",
+                    text = "Jendela (interval)",
                     style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.Bold
                 )
-                Slider(
-                    value = params.step,
-                    onValueChange = { raw ->
-                        val snapped = (raw * 2).roundToInt() / 2f
-                        onParamsChange(tab, params.copy(step = snapped))
-                    },
-                    valueRange = 0.5f..8f,
-                    steps = 14
-                )
-
-                // ===== Slider: Jendela interval (1..15, kelipatan 1) =====
                 Text(
-                    "Jendela (interval): ${params.interval.toInt()} dtk",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Slider(
-                    value = params.interval,
-                    onValueChange = { raw ->
-                        onParamsChange(tab, params.copy(interval = raw.roundToInt().toFloat()))
-                    },
-                    valueRange = 1f..15f,
-                    steps = 13
-                )
-
-                // ===== Slider: Radius maksimal (0.5..10, kelipatan 0.5) =====
-                Text(
-                    "Radius maksimal: ${formatMeter(params.radius)}",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Slider(
-                    value = params.radius,
-                    onValueChange = { raw ->
-                        val snapped = (raw * 2).roundToInt() / 2f
-                        onParamsChange(tab, params.copy(radius = snapped))
-                    },
-                    valueRange = 0.5f..10f,
-                    steps = 18
-                )
-
-                // ===== Status efektif =====
-                val activeNow = playing || manual
-                Text(
-                    text = when {
-                        playing -> "Jitter $tabName aktif (otomatis: PLAY)"
-                        manual -> "Jitter $tabName aktif (manual)"
-                        else -> "Jitter $tabName tidak aktif"
-                    },
+                    text = "${cfg.windowS} dtk",
                     style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (activeNow) accent
-                    else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = accent
+                )
+                Slider(
+                    value = windowToSlider(cfg.windowS),
+                    onValueChange = { v ->
+                        updateCfg(cfg.copy(windowS = sliderToWindow(v)))
+                    },
+                    valueRange = 0f..1f
                 )
 
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(4.dp))
 
-                // ===== Tombol AKTIF MANUAL (bagian bawah) =====
-                Button(
-                    onClick = { onManualChange(tab, !manual) },
-                    enabled = !playing, // saat PLAY, jitter sudah aktif otomatis
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (manual) BTN_CANCEL_GRAY else BTN_SAVE_GREEN,
-                        contentColor = Color.White
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = when {
-                            playing -> "Aktif otomatis (PLAY)"
-                            manual -> "Aktif Manual: NONAKTIFKAN"
-                            else -> "Aktif Manual: AKTIFKAN"
-                        },
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                // ===== Slider: Radius maksimal (0,5 - 10 m, kelipatan 0,5) =====
+                Text(
+                    text = "Radius maksimal",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = String.format(java.util.Locale.US, "%.1f m", cfg.radiusM),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = accent
+                )
+                Slider(
+                    value = radiusToSlider(cfg.radiusM),
+                    onValueChange = { v ->
+                        updateCfg(cfg.copy(radiusM = sliderToRadius(v)))
+                    },
+                    valueRange = 0f..1f
+                )
             }
         },
         confirmButton = {
@@ -196,5 +216,31 @@ internal fun JitterDialog(
     )
 }
 
-private fun formatMeter(m: Float): String =
-    String.format(java.util.Locale.US, "%.1f m", m)
+@Composable
+private fun JitterTabChip(
+    label: String,
+    active: Boolean,
+    activeColor: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(50),
+        color = if (active) activeColor else MaterialTheme.colorScheme.surfaceVariant,
+        shadowElevation = 1.dp
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .padding(vertical = 8.dp)
+                .fillMaxWidth(),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+    }
+}

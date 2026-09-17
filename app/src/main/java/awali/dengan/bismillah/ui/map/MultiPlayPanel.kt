@@ -47,15 +47,16 @@ import awali.dengan.bismillah.R
 import kotlin.math.roundToInt
 
 // =====================================================================
-// CONTOH: Panel 5 tombol PLAY/STOP (label 1..5) dalam 1 kontainer.
+// CONTOH: Panel 4 tombol PLAY/STOP (label 1..4) dalam 1 kontainer.
 //   - Movable (drag bebas) + lock/unlock
-//   - CLAMP diterapkan saat jari dilepas & saat ukuran berubah
-//     (bukan saat drag) -> drag mulus, panel tidak pernah tertinggal
-//     di luar layar
+//   - Clamp saat jari dilepas & saat ukuran berubah -> panel tidak
+//     pernah tertinggal di luar layar
 //   - Rotate vertikal <-> horizontal (tombol 🔄)
+//   - 🔒 dan 🔄 digabung dalam SATU KOLOM (ControlStack)
+// Orientation-aware: isi panel sama, wadah Column/Row yang berganti.
 // =====================================================================
 
-// Warna aktif per tombol 1..5
+// Warna aktif per tombol 1..4
 private val MULTI_COLORS = listOf(
     Color(0xFFE53935), // 1 merah
     Color(0xFF1E88E5), // 2 biru
@@ -85,15 +86,15 @@ private fun clampCorrection(
 
 @Composable
 internal fun MultiPlayPanel(
-    playing: List<Boolean>,
-    onToggle: (Int) -> Unit,
-    horizontal: Boolean,
+    playing: List<Boolean>,          // 4 status play/stop (index 0..3)
+    onToggle: (Int) -> Unit,         // tap tombol index i
+    horizontal: Boolean,             // false = vertikal, true = horizontal
     onToggleOrientation: () -> Unit,
     locked: Boolean,
     onLockedChange: (Boolean) -> Unit,
     dragOffset: Offset,
     onDragOffsetChange: (Offset) -> Unit,
-    screenSize: IntSize,
+    screenSize: IntSize,             // ukuran layar px (dari MapScreen)
     modifier: Modifier = Modifier
 ) {
     val currentDragOffset by rememberUpdatedState(dragOffset)
@@ -105,7 +106,6 @@ internal fun MultiPlayPanel(
     val marginPx = with(LocalDensity.current) { 16.dp.toPx() }
 
     // Koreksi posisi SEKALI saat ukuran layar/panel berubah (start & rotate).
-    // Kunci TIDAK memuat panelPos -> tidak pernah berjalan saat drag.
     LaunchedEffect(screenSize, panelSize) {
         if (screenSize.width == 0 || panelSize.width == 0) return@LaunchedEffect
         val delta = clampCorrection(panelPos, panelSize, screenSize, marginPx)
@@ -194,7 +194,7 @@ internal fun MultiPlayPanel(
 
 // =====================================================================
 // Isi panel — ditulis SEKALI, dipakai Column (vertikal) & Row (horizontal):
-//   [▶1][1] sep [▶2][2] sep [▶3][3] sep [▶4][4] sep [▶5][5] sep [🔒] sep [🔄]
+//   [▶1][1] sep [▶2][2] sep [▶3][3] sep [▶4][4] sep [kolom 🔒+🔄]
 // =====================================================================
 
 @Composable
@@ -223,13 +223,12 @@ private fun MultiPanelContent(
     MultiDivider(horizontal)
     MultiGap(8, horizontal)
 
-    LockButton(locked = locked, onToggle = { onLockedChange(!locked) })
-
-    MultiGap(8, horizontal)
-    MultiDivider(horizontal)
-    MultiGap(8, horizontal)
-
-    OrientationButton(onClick = onToggleOrientation)
+    // 🔒 + 🔄 dalam 1 kolom
+    ControlStack(
+        locked = locked,
+        onLockedChange = onLockedChange,
+        onToggleOrientation = onToggleOrientation
+    )
 }
 
 // Satu item: tombol bulat play/stop + label angka di bawahnya
@@ -239,7 +238,7 @@ private fun MultiItem(
     playing: Boolean,
     onClick: () -> Unit
 ) {
-        // Guard: jika index melebihi palet (harusnya tidak), pakai abu agar tidak crash
+    // Guard: jika index melebihi palet (harusnya tidak), pakai abu agar tidak crash
     val accent = MULTI_COLORS.getOrElse(index) { Color(0xFF757575) }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Surface(
@@ -273,7 +272,23 @@ private fun MultiItem(
     }
 }
 
-// Separator orientation-aware
+// Kontrol panel dalam 1 kolom: lock/unlock di atas, rotate di bawah
+@Composable
+private fun ControlStack(
+    locked: Boolean,
+    onLockedChange: (Boolean) -> Unit,
+    onToggleOrientation: () -> Unit
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        LockButton(locked = locked, onToggle = { onLockedChange(!locked) })
+        Spacer(Modifier.height(4.dp))
+        OrientationButton(onClick = onToggleOrientation)
+    }
+}
+
+// Separator orientation-aware:
+//   vertikal   -> garis mendatar 46dp
+//   horizontal -> garis tegak tinggi 46dp
 @Composable
 private fun MultiDivider(horizontal: Boolean) {
     if (horizontal) {
@@ -291,7 +306,7 @@ private fun MultiDivider(horizontal: Boolean) {
     }
 }
 
-// Spacer orientation-aware
+// Spacer orientation-aware: height saat vertikal, width saat horizontal
 @Composable
 private fun MultiGap(dps: Int, horizontal: Boolean) {
     if (horizontal) {

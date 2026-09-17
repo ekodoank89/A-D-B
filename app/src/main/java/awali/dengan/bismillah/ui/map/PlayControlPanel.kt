@@ -47,27 +47,26 @@ import kotlin.math.roundToInt
 // =====================================================================
 // Panel tombol utama — favorite MEMBUKA DIALOG (bukan toggle marker).
 // Urutan: [▶GRB] [GRB] [sep] [GJK] [▶GJK] [sep] [lock] [sep] [⭐] [sep] [Jitter]
-// ⭐ = icon BINTANG EMAS; latar emas lembut jika ada favorite tersimpan.
-// Movable (drag) + lock — DRAG DI-CLAMP agar panel tidak keluar layar.
+// Movable (drag bebas) + lock — clamp saat jari dilepas & saat ukuran
+// layar/panel berubah (bukan saat drag).
 // =====================================================================
 
-// Hitung delta drag yang sudah di-clamp agar panel tetap dalam layar (px).
-private fun clampedDragDelta(
+// Delta koreksi agar panel (di posisi panelPos) masuk ke dalam layar.
+private fun clampCorrection(
     panelPos: Offset,
-    drag: Offset,
     panelSize: IntSize,
     screenSize: IntSize,
     marginPx: Float
 ): Offset {
     if (screenSize.width <= 0 || screenSize.height <= 0 ||
         panelSize.width <= 0 || panelSize.height <= 0
-    ) return drag
+    ) return Offset.Zero
     val minX = marginPx
     val maxX = (screenSize.width - panelSize.width - marginPx).toFloat()
     val minY = marginPx
     val maxY = (screenSize.height - panelSize.height - marginPx).toFloat()
-    val targetX = (panelPos.x + drag.x).coerceIn(minX, maxX)
-    val targetY = (panelPos.y + drag.y).coerceIn(minY, maxY)
+    val targetX = panelPos.x.coerceIn(minX, maxX)
+    val targetY = panelPos.y.coerceIn(minY, maxY)
     return Offset(targetX - panelPos.x, targetY - panelPos.y)
 }
 
@@ -91,15 +90,15 @@ internal fun PlayControlPanel(
     val currentDragOffset by rememberUpdatedState(dragOffset)
     val currentLocked by rememberUpdatedState(locked)
 
-    // Ukuran & posisi panel sendiri (diukur saat layout)
     var panelSize by remember { mutableStateOf(IntSize.Zero) }
     var panelPos by remember { mutableStateOf(Offset.Zero) }
 
     val marginPx = with(LocalDensity.current) { 16.dp.toPx() }
 
-    // Safety net: koreksi posisi bila panel di luar batas
-    LaunchedEffect(panelPos, panelSize, screenSize) {
-        val delta = clampedDragDelta(panelPos, Offset.Zero, panelSize, screenSize, marginPx)
+    // Koreksi posisi SEKALI saat ukuran layar/panel berubah (start & rotate).
+    LaunchedEffect(screenSize, panelSize) {
+        if (screenSize.width == 0 || panelSize.width == 0) return@LaunchedEffect
+        val delta = clampCorrection(panelPos, panelSize, screenSize, marginPx)
         if (delta != Offset.Zero) {
             onDragOffsetChange(currentDragOffset + delta)
         }
@@ -111,15 +110,31 @@ internal fun PlayControlPanel(
             .onGloballyPositioned { panelPos = it.positionInWindow() }
             .onSizeChanged { panelSize = it }
             .pointerInput(Unit) {
-                detectDragGestures { change, dragAmount ->
+                detectDragGestures(
+                    onDragEnd = {
+                        if (!currentLocked) {
+                            val delta = clampCorrection(
+                                panelPos, panelSize, screenSize, marginPx
+                            )
+                            if (delta != Offset.Zero) {
+                                onDragOffsetChange(currentDragOffset + delta)
+                            }
+                        }
+                    },
+                    onDragCancel = {
+                        if (!currentLocked) {
+                            val delta = clampCorrection(
+                                panelPos, panelSize, screenSize, marginPx
+                            )
+                            if (delta != Offset.Zero) {
+                                onDragOffsetChange(currentDragOffset + delta)
+                            }
+                        }
+                    }
+                ) { change, dragAmount ->
                     change.consume()
                     if (!currentLocked) {
-                        // AKUMULASI + clamp: offset baru = offset lama + delta ter-clamp
-                        onDragOffsetChange(
-                            currentDragOffset + clampedDragDelta(
-                                panelPos, dragAmount, panelSize, screenSize, marginPx
-                            )
-                        )
+                        onDragOffsetChange(currentDragOffset + dragAmount)
                     }
                 }
             },
@@ -187,7 +202,7 @@ internal fun PlayControlPanel(
 
             Spacer(Modifier.height(8.dp))
 
-            // 9. Tombol Favorite — icon BINTANG EMAS, buka dialog menu favorite
+            // 9. Tombol Favorite — icon BINTANG EMAS
             UtilityButton(
                 iconRes = R.drawable.ic_star,
                 contentDesc = "Buka menu favorite",

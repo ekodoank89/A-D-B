@@ -48,10 +48,11 @@ import kotlin.math.roundToInt
 
 // =====================================================================
 // CONTOH: Panel 5 tombol PLAY/STOP (label 1..5) dalam 1 kontainer.
-//   - Movable (drag) + lock/unlock — DRAG DI-CLAMP agar panel tidak
-//     pernah keluar dari tampilan layar (margin 16dp)
-//   - Rotate vertikal <-> horizontal (tombol 🔄 di ujung panel)
-// Orientation-aware: isi panel sama, wadah Column/Row yang berganti.
+//   - Movable (drag bebas) + lock/unlock
+//   - CLAMP diterapkan saat jari dilepas & saat ukuran berubah
+//     (bukan saat drag) -> drag mulus, panel tidak pernah tertinggal
+//     di luar layar
+//   - Rotate vertikal <-> horizontal (tombol 🔄)
 // =====================================================================
 
 // Warna aktif per tombol 1..5
@@ -63,51 +64,52 @@ private val MULTI_COLORS = listOf(
     Color(0xFF8E24AA)  // 5 ungu
 )
 
-// Hitung delta drag yang sudah di-clamp agar panel tetap dalam layar (px).
-private fun clampedDragDelta(
+// Delta koreksi agar panel (di posisi panelPos) masuk ke dalam layar.
+// Mengembalikan Offset.Zero jika sudah di dalam batas.
+private fun clampCorrection(
     panelPos: Offset,
-    drag: Offset,
     panelSize: IntSize,
     screenSize: IntSize,
     marginPx: Float
 ): Offset {
     if (screenSize.width <= 0 || screenSize.height <= 0 ||
         panelSize.width <= 0 || panelSize.height <= 0
-    ) return drag
+    ) return Offset.Zero
     val minX = marginPx
     val maxX = (screenSize.width - panelSize.width - marginPx).toFloat()
     val minY = marginPx
     val maxY = (screenSize.height - panelSize.height - marginPx).toFloat()
-    val targetX = (panelPos.x + drag.x).coerceIn(minX, maxX)
-    val targetY = (panelPos.y + drag.y).coerceIn(minY, maxY)
+    val targetX = panelPos.x.coerceIn(minX, maxX)
+    val targetY = panelPos.y.coerceIn(minY, maxY)
     return Offset(targetX - panelPos.x, targetY - panelPos.y)
 }
 
 @Composable
 internal fun MultiPlayPanel(
-    playing: List<Boolean>,          // 5 status play/stop (index 0..4)
-    onToggle: (Int) -> Unit,         // tap tombol index i
-    horizontal: Boolean,             // false = vertikal, true = horizontal
+    playing: List<Boolean>,
+    onToggle: (Int) -> Unit,
+    horizontal: Boolean,
     onToggleOrientation: () -> Unit,
     locked: Boolean,
     onLockedChange: (Boolean) -> Unit,
     dragOffset: Offset,
     onDragOffsetChange: (Offset) -> Unit,
-    screenSize: IntSize,             // ukuran layar px (dari MapScreen)
+    screenSize: IntSize,
     modifier: Modifier = Modifier
 ) {
     val currentDragOffset by rememberUpdatedState(dragOffset)
     val currentLocked by rememberUpdatedState(locked)
 
-    // Ukuran & posisi panel sendiri (diukur saat layout)
     var panelSize by remember { mutableStateOf(IntSize.Zero) }
     var panelPos by remember { mutableStateOf(Offset.Zero) }
 
     val marginPx = with(LocalDensity.current) { 16.dp.toPx() }
 
-    // Safety net: koreksi posisi bila panel di luar batas (mis. setelah rotate)
-    LaunchedEffect(panelPos, panelSize, screenSize) {
-        val delta = clampedDragDelta(panelPos, Offset.Zero, panelSize, screenSize, marginPx)
+    // Koreksi posisi SEKALI saat ukuran layar/panel berubah (start & rotate).
+    // Kunci TIDAK memuat panelPos -> tidak pernah berjalan saat drag.
+    LaunchedEffect(screenSize, panelSize) {
+        if (screenSize.width == 0 || panelSize.width == 0) return@LaunchedEffect
+        val delta = clampCorrection(panelPos, panelSize, screenSize, marginPx)
         if (delta != Offset.Zero) {
             onDragOffsetChange(currentDragOffset + delta)
         }
@@ -119,15 +121,33 @@ internal fun MultiPlayPanel(
             .onGloballyPositioned { panelPos = it.positionInWindow() }
             .onSizeChanged { panelSize = it }
             .pointerInput(Unit) {
-                detectDragGestures { change, dragAmount ->
+                detectDragGestures(
+                    // Clamp saat jari dilepas -> panel masuk batas
+                    onDragEnd = {
+                        if (!currentLocked) {
+                            val delta = clampCorrection(
+                                panelPos, panelSize, screenSize, marginPx
+                            )
+                            if (delta != Offset.Zero) {
+                                onDragOffsetChange(currentDragOffset + delta)
+                            }
+                        }
+                    },
+                    onDragCancel = {
+                        if (!currentLocked) {
+                            val delta = clampCorrection(
+                                panelPos, panelSize, screenSize, marginPx
+                            )
+                            if (delta != Offset.Zero) {
+                                onDragOffsetChange(currentDragOffset + delta)
+                            }
+                        }
+                    }
+                ) { change, dragAmount ->
                     change.consume()
                     if (!currentLocked) {
-                        // AKUMULASI + clamp: offset baru = offset lama + delta ter-clamp
-                        onDragOffsetChange(
-                            currentDragOffset + clampedDragDelta(
-                                panelPos, dragAmount, panelSize, screenSize, marginPx
-                            )
-                        )
+                        // Mekanik drag asli yang terbukti bekerja
+                        onDragOffsetChange(currentDragOffset + dragAmount)
                     }
                 }
             },
@@ -204,14 +224,12 @@ private fun MultiPanelContent(
     MultiDivider(horizontal)
     MultiGap(8, horizontal)
 
-    // Lock/unlock movable
     LockButton(locked = locked, onToggle = { onLockedChange(!locked) })
 
     MultiGap(8, horizontal)
     MultiDivider(horizontal)
     MultiGap(8, horizontal)
 
-    // Rotate vertikal <-> horizontal
     OrientationButton(onClick = onToggleOrientation)
 }
 
@@ -255,9 +273,7 @@ private fun MultiItem(
     }
 }
 
-// Separator orientation-aware:
-//   vertikal   -> garis mendatar 46dp
-//   horizontal -> garis tegak tinggi 46dp
+// Separator orientation-aware
 @Composable
 private fun MultiDivider(horizontal: Boolean) {
     if (horizontal) {
@@ -275,7 +291,7 @@ private fun MultiDivider(horizontal: Boolean) {
     }
 }
 
-// Spacer orientation-aware: height saat vertikal, width saat horizontal
+// Spacer orientation-aware
 @Composable
 private fun MultiGap(dps: Int, horizontal: Boolean) {
     if (horizontal) {

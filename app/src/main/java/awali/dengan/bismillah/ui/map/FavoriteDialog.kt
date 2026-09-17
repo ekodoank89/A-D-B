@@ -2,8 +2,10 @@ package awali.dengan.bismillah.ui.map
 
 import android.content.SharedPreferences
 import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -37,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -55,6 +59,9 @@ import java.util.Locale
 //  - Tombol aksi berwarna:
 //      Simpan = hijau, Update = biru,
 //      dialog hapus: Hapus = merah, Batal = abu, Tutup = abu teks
+//  - Daftar favorite: kartu baris berlatar lembut + strip aksen kiri
+//    berwarna tab aktif (GRB merah / GJK biru), koordinat monospace
+//    berwarna aksen, garis pemisah antar baris
 //  - Form "Dari Pin": nama manual, Latitude & Longitude OTOMATIS
 //    terisi dari pin tengah (read-only) -> Tombol Simpan
 //  - Form "Manual": nama + latitude + longitude manual -> Tombol Simpan
@@ -356,14 +363,29 @@ internal fun FavoriteDialog(
                         modifier = Modifier.padding(vertical = 8.dp)
                     )
                 } else {
+                    // Warna aksen daftar mengikuti tab GRB/GJK aktif
+                    val listAccentColor = when (tab) {
+                        FavTab.GRB -> GRB_RED
+                        FavTab.GJK -> GJK_BLUE
+                    }
                     Column(
                         modifier = Modifier
                             .heightIn(max = 220.dp)
                             .verticalScroll(rememberScrollState())
                     ) {
-                        list.forEach { item ->
+                        list.forEachIndexed { index, item ->
+                            // Garis pemisah antar baris (kecuali sebelum baris pertama)
+                            if (index > 0) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 4.dp),
+                                    thickness = 1.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant
+                                        .copy(alpha = 0.5f)
+                                )
+                            }
                             FavRow(
                                 item = item,
+                                accentColor = listAccentColor,
                                 onEdit = {
                                     editingId = item.id
                                     editingName = item.name
@@ -449,9 +471,12 @@ private fun FavTabChip(
     }
 }
 
+// Baris daftar favorite: kartu lembut + strip aksen kiri berwarna tab aktif,
+// koordinat monospace berwarna aksen
 @Composable
 private fun FavRow(
     item: FavItem,
+    accentColor: Color,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onClick: () -> Unit
@@ -460,25 +485,43 @@ private fun FavRow(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(
+        // Kartu baris: latar lembut + border kiri berwarna aksen tab
+        Row(
             modifier = Modifier
                 .weight(1f)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
                 .clickable(onClick = onClick)
-                .padding(vertical = 4.dp)
+                .padding(start = 3.dp)
         ) {
-            Text(
-                text = item.name,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+            // Strip aksen kiri (GRB merah / GJK biru)
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(44.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(accentColor)
             )
-            Text(
-                text = formatLatLng(LatLng(item.lat, item.lng)),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = item.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = formatLatLng(LatLng(item.lat, item.lng)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = accentColor, // koordinat berwarna aksen tab
+                    fontFamily = FontFamily.Monospace
+                )
+            }
         }
         IconButton(onClick = onEdit) {
             Icon(

@@ -16,6 +16,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -50,6 +52,8 @@ import java.util.Locale
 //      baris 2: Dari Pin / Manual   (form aktif; pilihan tersimpan)
 //  - Warna tab Dari Pin/Manual mengikuti warna tab GRB/GJK aktif:
 //      GRB -> merah, GJK -> biru
+//  - Tombol aksi berwarna:
+//      Simpan = hijau, Update = biru, Hapus = merah, Batal/Tutup = abu
 //  - Form "Dari Pin": nama manual, Latitude & Longitude OTOMATIS
 //    terisi dari pin tengah (read-only) -> Tombol Simpan
 //  - Form "Manual": nama + latitude + longitude manual -> Tombol Simpan
@@ -58,6 +62,11 @@ import java.util.Locale
 //  - Tap 🗑 pada item -> dialog konfirmasi (Hapus/Batal)
 //  - Tap baris = fly ke lokasi
 // =====================================================================
+
+// Warna tombol aksi
+private val BTN_SAVE_GREEN = Color(0xFF2E7D32)   // Simpan
+private val BTN_UPDATE_BLUE = Color(0xFF1E88E5)  // Update
+private val BTN_DELETE_RED = Color(0xFFC62828)   // Hapus
 
 @Composable
 internal fun FavoriteDialog(
@@ -205,7 +214,7 @@ internal fun FavoriteDialog(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    TextButton(
+                    Button(
                         onClick = {
                             val lat = editingLat.trim().toDoubleOrNull()
                             val lng = editingLng.trim().toDoubleOrNull()
@@ -222,6 +231,12 @@ internal fun FavoriteDialog(
                                 cancelEdit()
                             }
                         },
+                        enabled = editingName.isNotBlank() &&
+                            editingLat.isNotBlank() && editingLng.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = BTN_UPDATE_BLUE,
+                            contentColor = Color.White
+                        ),
                         modifier = Modifier.align(Alignment.End)
                     ) { Text("Update") }
                 } else if (section == "PIN") {
@@ -253,12 +268,16 @@ internal fun FavoriteDialog(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    TextButton(
+                    Button(
                         onClick = {
                             onAdd(tab, pinName, currentPin)
                             pinName = ""
                         },
                         enabled = pinName.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = BTN_SAVE_GREEN,
+                            contentColor = Color.White
+                        ),
                         modifier = Modifier.align(Alignment.End)
                     ) { Text("Simpan") }
                 } else {
@@ -286,7 +305,7 @@ internal fun FavoriteDialog(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    TextButton(
+                    Button(
                         onClick = {
                             val lat = manualLat.trim().toDoubleOrNull()
                             val lng = manualLng.trim().toDoubleOrNull()
@@ -307,6 +326,10 @@ internal fun FavoriteDialog(
                         },
                         enabled = manualName.isNotBlank() &&
                             manualLat.isNotBlank() && manualLng.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = BTN_SAVE_GREEN,
+                            contentColor = Color.White
+                        ),
                         modifier = Modifier.align(Alignment.End)
                     ) { Text("Simpan") }
                 }
@@ -354,7 +377,13 @@ internal fun FavoriteDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Tutup") }
+            TextButton(onClick = onDismiss) {
+                Text(
+                    "Tutup",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, // abu netral
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
     )
 
@@ -369,11 +398,21 @@ internal fun FavoriteDialog(
                     onDelete(tab, target.id)
                     deleteTarget = null
                 }) {
-                    Text("Hapus", color = MaterialTheme.colorScheme.error)
+                    Text(
+                        "Hapus",
+                        color = BTN_DELETE_RED, // merah tegas
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             },
             dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) { Text("Batal") }
+                TextButton(onClick = { deleteTarget = null }) {
+                    Text(
+                        "Batal",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, // abu netral
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         )
     }

@@ -57,9 +57,10 @@ import kotlinx.coroutines.launch
 // Implementasi UI tiap panel ada di file terpisah:
 //   MapConstants.kt, MapPrefs.kt, FavoriteStore.kt, MapPermissions.kt,
 //   MarkerIcons.kt, CoordinatePanel.kt, PlayControlPanel.kt,
-//   UtilityPanel.kt, FavoriteDialog.kt, JitterDialog.kt
+//   UtilityPanel.kt, FavoriteDialog.kt, JitterStore.kt, JitterDialog.kt
 // Jitter: otomatis aktif saat GRB/GJK PLAY; koordinat bergerak tiap
-// jendela (interval) sejauh langkah, dibatasi radius maks. Konfigurasi
+// jendela (interval) sejauh langkah, dibatasi radius maks yang diukur
+// dari TITIK AWAL (anchor) saat tombol PLAY ditekan. Konfigurasi
 // per-tab diatur lewat dialog (tombol 🎲) dan persisten.
 // =====================================================================
 
@@ -114,11 +115,11 @@ fun MapScreen(modifier: Modifier = Modifier) {
     var grbPlaying by rememberPersistentBoolean("grb_playing", false)
     var gjkPlaying by rememberPersistentBoolean("gjk_playing", false)
 
-    // ===== Koordinat TERKUNCI saat PLAY — PERSISTEN =====
+    // ===== Koordinat TERKUNCI saat PLAY — PERSISTEN (bergerak oleh jitter) =====
     var grbCoord by rememberPersistentLatLng("grb_coord")
     var gjkCoord by rememberPersistentLatLng("gjk_coord")
 
-    // ===== Konfigurasi jitter per tab — PERSISTEN =====
+    // ===== Konfigurasi jitter per tab — PERSISTEN (via JitterStore) =====
     var grbJitterCfg by remember { mutableStateOf(loadJitterConfig(prefs, FavTab.GRB)) }
     var gjkJitterCfg by remember { mutableStateOf(loadJitterConfig(prefs, FavTab.GJK)) }
 
@@ -212,26 +213,31 @@ fun MapScreen(modifier: Modifier = Modifier) {
     }
 
     // ==================================================================
-    // JITTER LOOP — berjalan selama GRB playing: tiap jendela (interval),
-    // koordinat GRB bergerak sejauh langkah, dibatasi radius maks.
+    // JITTER LOOP — GRB:
+    //   - Aktif selama grbPlaying = true (jitter otomatis saat PLAY)
+    //   - anchor = TITIK AWAL saat PLAY -> radius maks diukur dari sini
+    //   - Tiap jendela (interval), koordinat bergerak sejauh langkah;
+    //     bila kandidat keluar radius, arah memantul ke dalam.
     // ==================================================================
     LaunchedEffect(grbPlaying) {
         if (!grbPlaying) return@LaunchedEffect
-        var current = grbCoord ?: return@LaunchedEffect
+        val anchor = grbCoord ?: return@LaunchedEffect
+        var current = anchor
         while (true) {
-            delay((grbJitterCfg.windowS * 1000L))
-            current = nextJitterPosition(current, grbCoord ?: current, grbJitterCfg)
+            delay(grbJitterCfg.windowS * 1000L)
+            current = nextJitterPosition(current, anchor, grbJitterCfg)
             grbCoord = current
         }
     }
 
-    // JITTER LOOP — GJK
+    // JITTER LOOP — GJK (sama, konfigurasi terpisah)
     LaunchedEffect(gjkPlaying) {
         if (!gjkPlaying) return@LaunchedEffect
-        var current = gjkCoord ?: return@LaunchedEffect
+        val anchor = gjkCoord ?: return@LaunchedEffect
+        var current = anchor
         while (true) {
-            delay((gjkJitterCfg.windowS * 1000L))
-            current = nextJitterPosition(current, gjkCoord ?: current, gjkJitterCfg)
+            delay(gjkJitterCfg.windowS * 1000L)
+            current = nextJitterPosition(current, anchor, gjkJitterCfg)
             gjkCoord = current
         }
     }
@@ -277,10 +283,12 @@ fun MapScreen(modifier: Modifier = Modifier) {
         }
     }
 
+    // ===== Zoom IN: sekali tap langsung ke zoom MAKSIMAL =====
     fun zoomInMax() {
         scope.launch { cameraPositionState.animate(CameraUpdateFactory.zoomTo(MAX_ZOOM)) }
     }
 
+    // ===== Zoom OUT: mundur 2 level per tap =====
     fun zoomOut() {
         scope.launch { cameraPositionState.animate(CameraUpdateFactory.zoomBy(-2f)) }
     }
@@ -331,12 +339,14 @@ fun MapScreen(modifier: Modifier = Modifier) {
     }
 
     MaterialTheme(colorScheme = colorScheme) {
+        // Ukuran layar diukur dari Box root — dipakai semua panel moveable
         Box(
             modifier = modifier
                 .fillMaxSize()
                 .onSizeChanged { screenSize = it }
         ) {
 
+            // ===== Google Map full width + marker GRB/GJK =====
             GoogleMap(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
@@ -374,8 +384,10 @@ fun MapScreen(modifier: Modifier = Modifier) {
                 }
             }
 
+            // ===== Pin HIJAU tetap di tengah layar =====
             CenterPin(modifier = Modifier.align(Alignment.Center))
 
+            // ===== Panel chip koordinat: PIN + GRB + GJK =====
             CoordinatePanel(
                 pinCoord = target,
                 grbCoord = grbCoord,
@@ -392,13 +404,14 @@ fun MapScreen(modifier: Modifier = Modifier) {
                     .padding(top = 4.dp)
             )
 
+            // ===== Panel tombol utama (favorite & jitter membuka dialog) =====
             PlayControlPanel(
                 grbPlaying = grbPlaying,
                 gjkPlaying = gjkPlaying,
                 onGrbToggle = {
                     if (!grbPlaying) {
-                        // PLAY: jitter GRB otomatis aktif (loop di atas jalan
-                        // begitu grbPlaying = true); koordinat awal = pin tengah
+                        // PLAY: koordinat awal = pin tengah saat ini;
+                        // jitter GRB otomatis aktif (loop di atas mulai jalan)
                         grbCoord = cameraPositionState.position.target
                         grbPlaying = true
                     } else {
@@ -432,6 +445,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                     .padding(bottom = 16.dp)
             )
 
+            // ===== Panel utilitas icon-only (rotate + moveable + lock) =====
             UtilityPanel(
                 darkMode = darkMode,
                 onAutoFocus = { autoFocus() },
@@ -451,6 +465,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                     .padding(end = 16.dp, bottom = 16.dp)
             )
 
+            // ===== Dialog Favorite =====
             if (showFavDialog) {
                 FavoriteDialog(
                     prefs = prefs,
@@ -469,6 +484,7 @@ fun MapScreen(modifier: Modifier = Modifier) {
                 )
             }
 
+            // ===== Dialog Jitter =====
             if (showJitterDialog) {
                 JitterDialog(
                     prefs = prefs,
@@ -479,6 +495,10 @@ fun MapScreen(modifier: Modifier = Modifier) {
         }
     }
 }
+
+// =====================================================================
+// Pin tengah — HIJAU
+// =====================================================================
 
 @Composable
 private fun CenterPin(modifier: Modifier = Modifier) {
